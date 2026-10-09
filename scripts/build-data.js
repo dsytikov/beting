@@ -166,10 +166,12 @@ async function fetchBSD() {
     // fallback fan-out so a sparse prediction feed cannot exhaust the serverless budget.
     const missingUpcoming = [];
     events.forEach((event, index) => {
-      const status = String(first(event.status, event.match_status, '')).toLowerCase();
+      const status = String(first(event.status, event.match_status, event.matchStatus, '')).toLowerCase();
       const kickoff = first(event.event_date, event.start_time, event.kickoff, event.date);
-      if (!matchedPredictions[index] && kickoff && dateKey(kickoff) === date &&
-          (!status || status === 'upcoming') && missingUpcoming.length < 12) {
+      const isFuture = kickoff && Date.parse(kickoff) > Date.now();
+      const isUpcomingStatus = !status || ['upcoming', 'scheduled', 'not_started', 'not started', 'prematch', 'pre-match', 'ns'].includes(status);
+      if (!matchedPredictions[index] && kickoff && dateKey(kickoff) === date && isFuture &&
+          isUpcomingStatus && missingUpcoming.length < 12) {
         missingUpcoming.push({ event, index });
       }
     });
