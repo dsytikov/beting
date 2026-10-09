@@ -179,8 +179,15 @@ function normalizeBsd(event, prediction, leagueNames = new Map()) {
   const matchStatus = String(first(pick(sourceEvent, 'status', 'matchStatus', 'match_status', 'state'), '')).toLowerCase();
   const isLive = ['inprogress', 'in_progress', 'live', '1h', '2h', 'ht', 'half_time', 'halftime'].includes(matchStatus);
   const isFinished = ['finished', 'complete', 'completed', 'ft', 'full_time', 'fulltime', 'ended'].includes(matchStatus);
+  const homeCorners = first(pick(sourceEvent, 'home_corners', 'homeCorners', 'cornersHome', 'homeCornerKicks'));
+  const awayCorners = first(pick(sourceEvent, 'away_corners', 'awayCorners', 'cornersAway', 'awayCornerKicks'));
   const actualResult = homeScore !== null && awayScore !== null
-    ? `${isLive ? 'LIVE · ' : isFinished ? 'ФТ · ' : ''}${homeScore}:${awayScore}`
+    ? [
+        `${isLive ? 'LIVE · ' : isFinished ? 'ФТ · ' : ''}${homeScore}:${awayScore}`,
+        Number(homeScore) > Number(awayScore) ? 'П1' : Number(homeScore) < Number(awayScore) ? 'П2' : 'X',
+        `голов: ${Number(homeScore) + Number(awayScore)}`,
+        homeCorners !== null && awayCorners !== null ? `угл.: ${Number(homeCorners) + Number(awayCorners)}` : null
+      ].filter(Boolean).join(' · ')
     : isLive ? 'Матч идёт' : isFinished ? 'Завершён' : '—';
   const home = first(pick(sourceEvent, 'homeTeam', 'home', 'teamHome', 'localTeam', 'homeTeamName'), pick(sourcePrediction, 'homeTeam', 'home', 'teamHome'));
   const away = first(pick(sourceEvent, 'awayTeam', 'away', 'teamAway', 'visitorTeam', 'awayTeamName'), pick(sourcePrediction, 'awayTeam', 'away', 'teamAway'));
@@ -231,8 +238,15 @@ function normalizeSstats(game, glicko = null, leagueNames = new Map()) {
   const matchStatus = String(first(pick(game, 'Status', 'status', 'MatchStatus', 'matchStatus', 'state'), '')).toLowerCase();
   const isLive = ['inprogress', 'in_progress', 'live', '1h', '2h', 'ht', 'half_time', 'halftime'].includes(matchStatus);
   const isFinished = ['finished', 'complete', 'completed', 'ft', 'full_time', 'fulltime', 'ended'].includes(matchStatus);
+  const homeCorners = first(pick(game, 'HomeCorners', 'homeCorners', 'home_corners', 'CornersHome'));
+  const awayCorners = first(pick(game, 'AwayCorners', 'awayCorners', 'away_corners', 'CornersAway'));
   const actualResult = homeScore !== null && awayScore !== null
-    ? `${isLive ? 'LIVE · ' : isFinished ? 'ФТ · ' : ''}${homeScore}:${awayScore}`
+    ? [
+        `${isLive ? 'LIVE · ' : isFinished ? 'ФТ · ' : ''}${homeScore}:${awayScore}`,
+        Number(homeScore) > Number(awayScore) ? 'П1' : Number(homeScore) < Number(awayScore) ? 'П2' : 'X',
+        `голов: ${Number(homeScore) + Number(awayScore)}`,
+        homeCorners !== null && awayCorners !== null ? `угл.: ${Number(homeCorners) + Number(awayCorners)}` : null
+      ].filter(Boolean).join(' · ')
     : isLive ? 'Матч идёт' : isFinished ? 'Завершён' : '—';
   const home = first(pick(game, 'HomeTeamName', 'homeTeamName', 'homeTeam', 'home', 'HomeTeam', 'teamHome'), pick(game.HomeTeam || {}, 'name', 'Name', 'teamName'));
   const away = first(pick(game, 'AwayTeamName', 'awayTeamName', 'awayTeam', 'away', 'AwayTeam', 'teamAway'), pick(game.AwayTeam || {}, 'name', 'Name', 'teamName'));
