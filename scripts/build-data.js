@@ -142,14 +142,14 @@ function normalizeBsd(event, prediction, leagueNames = new Map()) {
     : hasResultProbs
       ? `П1 ${probHome ?? '—'} / X ${probDraw ?? '—'} / П2 ${probAway ?? '—'}`
       : '—';
-  const over15 = first(pick(ou, 'prob_over_15', 'prob_over_1_5', 'over15Probability', 'over1_5'), deepPick(sourcePrediction, ['prob_over_15', 'prob_over_1_5']));
-  const over25 = first(pick(ou, 'prob_over_25', 'prob_over_2_5', 'over25Probability', 'over2_5'), deepPick(sourcePrediction, ['prob_over_25', 'prob_over_2_5']));
-  const over35 = first(pick(ou, 'prob_over_35', 'prob_over_3_5', 'over35Probability', 'over3_5'), deepPick(sourcePrediction, ['prob_over_35', 'prob_over_3_5']));
-  const corner85 = first(pick(corners, 'prob_over_85', 'prob_over_8_5', 'over85Probability', 'over8_5'), deepPick(sourcePrediction, ['prob_over_85', 'prob_over_8_5']));
-  const corner95 = first(pick(corners, 'prob_over_95', 'prob_over_9_5', 'over95Probability', 'over9_5'), deepPick(sourcePrediction, ['prob_over_95', 'prob_over_9_5']));
-  const corner105 = first(pick(corners, 'prob_over_105', 'prob_over_10_5', 'over105Probability', 'over10_5'), deepPick(sourcePrediction, ['prob_over_105', 'prob_over_10_5']));
-  const card25 = first(pick(cards, 'prob_over_25', 'prob_over_2_5', 'over25Probability', 'over2_5'), deepPick(sourcePrediction, ['yellowCardsOver25', 'prob_yellow_cards_over_25']));
-  const card35 = first(pick(cards, 'prob_over_35', 'prob_over_3_5', 'over35Probability', 'over3_5'), deepPick(sourcePrediction, ['yellowCardsOver35', 'prob_yellow_cards_over_35']));
+  const over15 = pick(ou, 'prob_over_15', 'prob_over_1_5', 'over15Probability', 'over1_5');
+  const over25 = pick(ou, 'prob_over_25', 'prob_over_2_5', 'over25Probability', 'over2_5');
+  const over35 = pick(ou, 'prob_over_35', 'prob_over_3_5', 'over35Probability', 'over3_5');
+  const corner85 = pick(corners, 'prob_over_85', 'prob_over_8_5', 'over85Probability', 'over8_5');
+  const corner95 = pick(corners, 'prob_over_95', 'prob_over_9_5', 'over95Probability', 'over9_5');
+  const corner105 = pick(corners, 'prob_over_105', 'prob_over_10_5', 'over105Probability', 'over10_5');
+  const card25 = pick(cards, 'prob_over_25', 'prob_over_2_5', 'over25Probability', 'over2_5');
+  const card35 = pick(cards, 'prob_over_35', 'prob_over_3_5', 'over35Probability', 'over3_5');
   const xgHome = first(pick(expected, 'home', 'homeXg', 'xgHome', 'homeExpectedGoals'), deepPick(sourcePrediction, ['homeXg', 'xgHome', 'homeExpectedGoals']));
   const xgAway = first(pick(expected, 'away', 'awayXg', 'xgAway', 'awayExpectedGoals'), deepPick(sourcePrediction, ['awayXg', 'xgAway', 'awayExpectedGoals']));
   const eventDate = first(
