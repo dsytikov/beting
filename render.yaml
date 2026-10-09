@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: beting-dashboard
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: BSD_TOKEN
+        sync: false
+      - key: SSTATS_TOKEN
+        sync: false
