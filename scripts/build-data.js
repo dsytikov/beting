@@ -5,7 +5,7 @@ const fs = require('node:fs');
 
 const BSD_BASE = 'https://sports.bzzoiro.com/api/v2';
 const SSTATS_BASE = 'https://api.sstats.net';
-const date = new Date().toISOString().slice(0, 10);
+let date = new Date().toISOString().slice(0, 10);
 const errors = [];
 const sourceStatus = {
   bsd: { ok: false, count: 0, message: '' },
@@ -122,6 +122,10 @@ async function runSource(name, fn) {
   }
 }
 async function buildData() {
+  date = new Date().toISOString().slice(0, 10);
+  errors.length = 0;
+  sourceStatus.bsd = { ok: false, count: 0, message: '' };
+  sourceStatus.sstats = { ok: false, count: 0, message: '' };
   const [bsd, sstats] = await Promise.all([runSource('bsd', fetchBSD), runSource('sstats', fetchSStats)]);
   const predictions = [...bsd, ...sstats]
     .filter(row => row.time && String(row.time).slice(0, 10) === date)
