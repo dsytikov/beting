@@ -318,7 +318,7 @@ async function fetchBSD() {
       const kickoff = first(pick(event, 'event_date', 'start_time', 'kickoff', 'date', 'dateTime', 'matchDate'));
       const isFuture = kickoff && Date.parse(kickoff) > Date.now();
       const upcoming = !status || ['upcoming', 'scheduled', 'not_started', 'not started', 'prematch', 'pre-match', 'ns'].includes(status);
-      if (!matchedPredictions[index] && kickoff && dateKey(kickoff) === date && isFuture && upcoming && missingUpcoming.length < 53) {
+      if (!matchedPredictions[index] && kickoff && dateKey(kickoff) === date && missingUpcoming.length < 53) {
         missingUpcoming.push({ event, index });
       }
     });
@@ -401,7 +401,7 @@ async function fetchSStats() {
   });
   // Glicko/xG is a separate documented endpoint, not part of /games/list.
   // Query it concurrently so the table gets actual model fields instead of empty placeholders.
-  const glickoTargets = todayGames.slice(0, 10); // Keep enrichment bounded so one slow provider cannot exhaust the Vercel request budget.
+  const glickoTargets = firstError ? [] : todayGames.slice(0, 10); // Skip optional enrichment after a slow fallback, preserving time for the data response.
   const glickoPairs = await Promise.all(glickoTargets.map(async game => {
     const id = pick(game, 'Id', 'GameId', 'gameId', 'id');
     if (id === null) return [String(id), null];
