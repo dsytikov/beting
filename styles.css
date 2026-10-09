@@ -227,3 +227,22 @@ footer a { color: var(--accent); text-decoration: none; }
     th, td { padding: 4px 3px; }
     th[data-sort]::after { content: ''; }
 }
+
+
+/* Highlight the full match row if any displayed probability is strictly above 80%. */
+tbody tr.high-probability-row {
+    background: rgba(239, 68, 68, 0.18);
+    box-shadow: inset 4px 0 0 #ef4444;
+}
+
+tbody tr.high-probability-row td {
+    border-top-color: rgba(248, 113, 113, 0.5);
+}
+
+tbody tr.high-probability-row .prediction-cell {
+    color: #fca5a5;
+}
+
+tbody tr.high-probability-row:hover {
+    background: rgba(239, 68, 68, 0.27);
+}
