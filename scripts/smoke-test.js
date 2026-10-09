@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { normalizeBsd, normalizeSstats } = require('./build-data');
 
 function responseMock() {
   return {
@@ -52,7 +53,38 @@ async function main() {
     else process.env.SSTATS_TOKEN = oldSstats;
   }
 
-  console.log('Smoke tests passed: Vercel-style Node responses and source-error JSON are valid.');
+  const bsdRow = normalizeBsd(
+    { id: 42, event_date: '2026-10-09T18:00:00Z', league: { id: 7, name: 'Test League' }, home_team: { name: 'Home FC' }, away_team: { name: 'Away FC' } },
+    { event: { id: 42, home_team: 'Home FC', away_team: 'Away FC' }, markets: {
+      match_result: { prob_home: 48, prob_draw: 27, prob_away: 25, predicted: 'home' },
+      over_under: { prob_over_25: 61 }, expected_goals: { home: 1.6, away: 1.1 },
+      corners: { prob_over_95: 52 }, yellow_cards: { prob_over_35: 44 }
+    } }
+  );
+  assert.equal(bsdRow.league, 'Test League');
+  assert.equal(bsdRow.home, 'Home FC');
+  assert.equal(bsdRow.away, 'Away FC');
+  assert.equal(bsdRow.source, 'BSD');
+  assert.equal(bsdRow.outcome, 'П1');
+  assert.match(bsdRow.totalGoals, /ТБ 2.5: 61.0%/);
+  assert.match(bsdRow.individualTotals, /1.6/);
+  assert.match(bsdRow.corners, /9.5: 52.0%/);
+  assert.match(bsdRow.yellowCards, /3.5: 44.0%/);
+
+  const sstatsRow = normalizeSstats(
+    { Id: 1183255, Date: '2026-10-09T19:00:00Z', LeagueId: 7, HomeTeamName: 'Alpha', AwayTeamName: 'Beta' },
+    { data: { homeWinProbability: 0.51, drawProbability: 0.25, awayWinProbability: 0.24, homeXg: 1.7, awayXg: 1.2 } },
+    new Map([['7', 'SStats Test League']])
+  );
+  assert.equal(sstatsRow.league, 'SStats Test League');
+  assert.equal(sstatsRow.home, 'Alpha');
+  assert.equal(sstatsRow.away, 'Beta');
+  assert.equal(sstatsRow.source, 'SStats');
+  assert.match(sstatsRow.outcome, /51.0%/);
+  assert.match(sstatsRow.individualTotals, /1.7/);
+  assert.match(sstatsRow.totalGoals, /2.90/);
+
+  console.log('Smoke tests passed: API response shape, provider field normalization, and missing-token diagnostics.');
 }
 
 main().catch((error) => {
