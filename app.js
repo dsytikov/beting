@@ -17,7 +17,7 @@ function formatTime(value) {
 function probabilityParts(value) {
   if (value === null || value === undefined || value === '') return [];
   return String(value).split(/\s*\/\s*/).map((part) => {
-    const match = part.match(/(\\d+(?:[.,]\\d+)?)\s*%/);
+    const match = part.match(/(\d+(?:[.,]\d+)?)\s*%/);
     return { part: part.trim(), probability: match ? Number.parseFloat(match[1].replace(',', '.')) : null };
   });
 }
