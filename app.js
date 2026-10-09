@@ -34,6 +34,21 @@ function addCell(row, value, className) {
   if (className) cell.className = className;
   row.appendChild(cell);
 }
+function hasProbabilityOver80(item) {
+  // Flag the entire match row when any displayed outcome/market probability exceeds 80%.
+  const fields = [
+    item.probabilityOutcome,
+    item.totalGoals,
+    item.underGoals,
+    item.individualTotals,
+    item.corners
+  ];
+  return fields.some((value) => {
+    if (value === null || value === undefined) return false;
+    const matches = String(value).match(/(\d+(?:[.,]\d+)?)\s*%/g) || [];
+    return matches.some((part) => Number.parseFloat(part.replace('%', '').replace(',', '.')) > 80);
+  });
+}
 function renderTable() {
   const tbody = $('table-body');
   tbody.replaceChildren();
@@ -41,6 +56,7 @@ function renderTable() {
   $('empty-state').classList.toggle('hidden', rows.length > 0);
   for (const item of rows) {
     const tr = document.createElement('tr');
+    if (hasProbabilityOver80(item)) tr.classList.add('high-probability-row');
     addCell(tr, formatTime(item.time));
     addCell(tr, item.league);
     addCell(tr, item.home);
