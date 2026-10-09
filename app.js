@@ -40,12 +40,27 @@ function filterProbabilityText(value) {
   const kept = parts.filter((part) => part.probability === null || part.probability >= MIN_DISPLAY_PROBABILITY);
   return kept.map((part) => part.part).join(' / ') || '—';
 }
+function doubleChanceProbabilities(value) {
+  const matches = [...String(value || '').matchAll(/(?:П1|X|П2)\s+(\d+(?:[.,]\d+)?)\s*%/g)];
+  const values = matches.map((match) => Number.parseFloat(match[1].replace(',', '.')));
+  if (values.length !== 3 || values.some((number) => !Number.isFinite(number))) {
+    return { oneX: '—', twelve: '—', xTwo: '—' };
+  }
+  const [home, draw, away] = values;
+  return {
+    oneX: `${(home + draw).toFixed(1)}%`,
+    twelve: `${(home + away).toFixed(1)}%`,
+    xTwo: `${(draw + away).toFixed(1)}%`
+  };
+}
 function preparePrediction(item) {
   const peak = maxProbability(item);
+  const doubleChance = doubleChanceProbabilities(item.probabilityOutcome);
   return {
     ...item,
+    ...doubleChance,
     maxProbability: peak,
-    probabilityOutcome: filterProbabilityText(item.probabilityOutcome),
+    probabilityOutcome: item.probabilityOutcome || '—',
     totalGoals: filterProbabilityText(item.totalGoals),
     underGoals: filterProbabilityText(item.underGoals),
     individualTotals: filterProbabilityText(item.individualTotals),
@@ -108,6 +123,9 @@ function renderTable() {
     addCell(tr, item.away);
     addCell(tr, item.outcome, 'prediction-cell');
     addCell(tr, item.probabilityOutcome, 'prediction-cell');
+    addCell(tr, item.oneX, 'prediction-cell');
+    addCell(tr, item.twelve, 'prediction-cell');
+    addCell(tr, item.xTwo, 'prediction-cell');
     addCell(tr, item.totalGoals, 'prediction-cell');
     addCell(tr, item.underGoals, 'prediction-cell');
     addCell(tr, item.individualTotals, 'prediction-cell');
