@@ -57,6 +57,17 @@ function percent(value) {
   if (number > 0 && number < 1) number *= 100;
   return `${number.toFixed(1)}%`;
 }
+function poissonOver(lambda, threshold) {
+  const mean = Number(lambda);
+  if (!Number.isFinite(mean) || mean < 0 || mean > 12) return null;
+  let probability = Math.exp(-mean);
+  let cumulative = probability;
+  for (let goals = 1; goals <= threshold; goals++) {
+    probability *= mean / goals;
+    cumulative += probability;
+  }
+  return Math.max(0, Math.min(1, 1 - cumulative));
+}
 function safeError(error) {
   return String(error?.message || error).replace(/https?:\/\/\S+/g, '[API URL]').slice(0, 220);
 }
@@ -152,10 +163,11 @@ function normalizeBsd(event, prediction, leagueNames = new Map()) {
     corner95 !== null ? `9.5: ${percent(corner95)}` : null,
     corner105 !== null ? `10.5: ${percent(corner105)}` : null
   ].filter(Boolean);
+  const lambda = xgHome !== null && xgAway !== null ? Number(xgHome) + Number(xgAway) : null;
   const goalParts = [
-    over15 !== null ? `ТБ 1.5: ${percent(over15)}` : null,
-    over25 !== null ? `ТБ 2.5: ${percent(over25)}` : null,
-    over35 !== null ? `ТБ 3.5: ${percent(over35)}` : null
+    over15 !== null ? `ТБ 1.5: ${percent(over15)}` : lambda !== null ? `ТБ 1.5 Poisson: ${percent(poissonOver(lambda, 1))}` : null,
+    over25 !== null ? `ТБ 2.5: ${percent(over25)}` : lambda !== null ? `ТБ 2.5 Poisson: ${percent(poissonOver(lambda, 2))}` : null,
+    over35 !== null ? `ТБ 3.5: ${percent(over35)}` : lambda !== null ? `ТБ 3.5 Poisson: ${percent(poissonOver(lambda, 3))}` : null
   ].filter(Boolean);
   const cardParts = [
     card25 !== null ? `ТБ 2.5: ${percent(card25)}` : null,
@@ -186,14 +198,21 @@ function normalizeSstats(game, glicko = null, leagueNames = new Map()) {
     pick(markets.match_result || markets.matchResult || {}, 'prob_home', 'probHome', 'homeProbability', 'homeWinProbability'),
     deepPick(detail, ['prob_home', 'probHome', 'homeProbability', 'homeWinProbability', 'homeWinProb'])
   );
-  const drawProb = first(
+  let drawProb = first(
     pick(markets.match_result || markets.matchResult || {}, 'prob_draw', 'probDraw', 'drawProbability'),
     deepPick(detail, ['prob_draw', 'probDraw', 'drawProbability', 'drawProb'])
   );
   const awayProb = first(
-    pick(markets.match_result || markets.matchResult || {}, 'prob_away', 'probAway', 'awayProbability', 'awayWinProbability'),
+    pick(markets.match_result || markets.matchResult || {}, 'prob_away', 'probAway', 'awayProbability', 'awayWinProbability', 'awayWinProb'),
     deepPick(detail, ['prob_away', 'probAway', 'awayProbability', 'awayWinProbability', 'awayWinProb'])
   );
+  if (drawProb === null && homeProb !== null && awayProb !== null) {
+    const homeN = Number(homeProb);
+    const awayN = Number(awayProb);
+    const scale = homeN <= 1 && awayN <= 1 ? 1 : 100;
+    const residual = scale - homeN - awayN;
+    if (residual >= 0 && residual <= scale) drawProb = residual / scale <= 1 ? residual / scale : residual;
+  }
   const winner = first(
     pick(prediction, 'predictedWinner', 'winner', 'prediction', 'recommendedOutcome'),
     deepPick(detail, ['predictedWinner', 'winner', 'recommendedOutcome'])
