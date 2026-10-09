@@ -466,7 +466,7 @@ async function buildData() {
   sourceStatus.bsd = { ok: false, count: 0, message: '', diagnostic: '' };
   sourceStatus.sstats = { ok: false, count: 0, message: '', diagnostic: '' };
   const [bsd, sstats] = await Promise.all([runSource('bsd', fetchBSD), runSource('sstats', fetchSStats)]);
-  const teamKey = value => String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const teamKey = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const bsdProbabilities = new Map();
   for (const row of bsd) {
     if (row.probabilityOutcome && row.probabilityOutcome !== '—') {
