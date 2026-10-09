@@ -68,6 +68,7 @@ async function main() {
   assert.equal(bsdRow.outcome, 'П1');
   assert.equal(bsdRow.probabilityOutcome, 'П1 48.0% / X 27.0% / П2 25.0%');
   assert.match(bsdRow.totalGoals, /ТБ 2.5: 61.0%/);
+  assert.match(bsdRow.underGoals, /ТМ 2.5: 39.0%/);
   assert.match(bsdRow.individualTotals, /1.6/);
   assert.match(bsdRow.corners, /9.5: 52.0%/);
   assert.match(bsdRow.yellowCards, /3.5: 44.0%/);
@@ -100,6 +101,7 @@ async function main() {
   assert.equal(sstatsRow.probabilityOutcome, 'П1 51.0% / X 25.0% / П2 24.0%');
   assert.match(sstatsRow.individualTotals, /1.7/);
   assert.match(sstatsRow.totalGoals, /ТБ 2.5 Poisson:/);
+  assert.match(sstatsRow.underGoals, /ТМ 2.5 Poisson:/);
 
   console.log('Smoke tests passed: API response shape, provider field normalization, and missing-token diagnostics.');
 }
