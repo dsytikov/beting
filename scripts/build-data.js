@@ -167,8 +167,9 @@ async function fetchBSD() {
 async function fetchSStats() {
   const token = process.env.SSTATS_TOKEN || '';
   if (!token) throw new Error('Не задан SSTATS_TOKEN в Environment Variables Vercel');
-  // SStats documents Year as a supported Games/list filter; filter the exact day locally.
-  const params = new URLSearchParams({ Year: date.slice(0, 4), Limit: '200', apikey: token });
+  // Request only the target day. Fetching an entire year can be slow or time out.
+  // SStats documents From/To filters for Games/list.
+  const params = new URLSearchParams({ from: date, to: date, limit: '200', order: '-1', apikey: token });
   const payload = await getJson(`${SSTATS_BASE}/games/list?${params}`);
   const games = arr(payload);
   return games.filter(game => {
