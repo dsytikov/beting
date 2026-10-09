@@ -17,6 +17,9 @@ function arr(payload, depth = 0) {
   for (const key of ['results', 'Results', 'data', 'Data', 'items', 'Items', 'games', 'Games', 'events', 'Events', 'predictions', 'Predictions', 'matches', 'Matches', 'records', 'value']) {
     if (Array.isArray(payload[key])) return payload[key];
   }
+  for (const value of Object.values(payload)) {
+    if (Array.isArray(value)) return value;
+  }
   for (const key of ['data', 'Data', 'result', 'Result', 'response', 'Response']) {
     if (payload[key] && typeof payload[key] === 'object') {
       const nested = arr(payload[key], depth + 1);
@@ -433,42 +436,48 @@ async function fetchSStats() {
   const token = process.env.SSTATS_TOKEN || '';
   if (!token) throw new Error('Не задан SSTATS_TOKEN в Environment Variables Vercel');
   const apiKey = `apikey=${encodeURIComponent(token)}`;
-  // Try Date first, but also fall back when it returns HTTP 200 with an empty
-  // result. An empty JSON response is not a request error, so catch-only fallback
-  // would otherwise leave SStats with zero matches.
+  // Date filters can return HTTP 200 with no rows. Try several documented date
+  // formats, then retain diagnostics about the actual response shape for debugging.
   let gamesPayload;
   let firstError;
-  let dateQueryCount = 0;
-  let dateQueryHasTargetDate = false;
-  try {
-    const params = new URLSearchParams({ Date: date, Limit: '200', Offset: '0', apikey: token });
-    gamesPayload = await getJson(`${SSTATS_BASE}/games/list?${params}`, {}, 4300);
-    const dateGames = arr(gamesPayload);
-    dateQueryCount = dateGames.length;
-    dateQueryHasTargetDate = dateGames.some(game => {
-      const raw = pick(game, 'Date', 'DateTime', 'eventDate', 'StartTime', 'Kickoff', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start');
-      return !raw || dateKey(raw) === date;
-    });
-  } catch (error) {
-    firstError = error;
-  }
-
-  if (firstError || dateQueryCount === 0 || !dateQueryHasTargetDate) {
+  const attempts = [];
+  const requestGames = async (label, query) => {
     try {
-      const params = new URLSearchParams({ From: date, To: date, Limit: '200', Offset: '0', apikey: token });
-      const fallbackPayload = await getJson(`${SSTATS_BASE}/games/list?${params}`, {}, 4000);
-      const fallbackCount = arr(fallbackPayload).length;
-      gamesPayload = fallbackPayload;
-      sourceStatus.sstats.diagnostic = firstError
-        ? `SStats: фильтр Date завершился ошибкой, проверен запасной From/To (${safeError(firstError)})`
-        : `SStats: фильтр Date не дал подходящих матчей (получено: ${dateQueryCount}); проверен запасной From/To (получено: ${fallbackCount})`;
-    } catch (fallbackError) {
-      if (firstError) {
-        throw new Error(`games/list Date: ${safeError(firstError)}; From/To: ${safeError(fallbackError)}`);
-      }
-      sourceStatus.sstats.diagnostic = `SStats: Date вернул 0 матчей; запрос From/To завершился ошибкой: ${safeError(fallbackError)}`;
+      const queryParams = new URLSearchParams({ ...query, Limit: '200', Offset: '0', apikey: token });
+      const payload = await getJson(SSTATS_BASE + '/games/list?' + queryParams.toString(), {}, 4300);
+      const rows = arr(payload);
+      const matching = rows.filter(game => {
+        const raw = pick(game, 'Date', 'DateTime', 'eventDate', 'StartTime', 'Kickoff', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start');
+        return !raw || dateKey(raw) === date;
+      });
+      attempts.push({ label, count: rows.length, matching: matching.length, keys: payload && typeof payload === 'object' && !Array.isArray(payload) ? Object.keys(payload).slice(0, 12) : [] });
+      return { payload, rows, matching };
+    } catch (error) {
+      attempts.push({ label, error: safeError(error) });
+      if (!firstError) firstError = error;
+      return null;
+    }
+  };
+
+  let result = await requestGames('Date', { Date: date });
+  if (result && result.matching.length) {
+    gamesPayload = result.payload;
+  } else {
+    result = await requestGames('From/To date', { From: date, To: date });
+    if (result && result.matching.length) {
+      gamesPayload = result.payload;
+    } else {
+      result = await requestGames('From/To datetime', { From: date + 'T00:00:00', To: date + 'T23:59:59' });
+      if (result && result.matching.length) gamesPayload = result.payload;
+      else if (result && result.rows.length) gamesPayload = result.payload;
+      else if (result && result.payload) gamesPayload = result.payload;
     }
   }
+
+  const attemptSummary = attempts.map(item => item.error
+    ? item.label + ': ошибка ' + item.error
+    : item.label + ': строк ' + item.count + ', совпало по дате ' + item.matching + ', ключи ' + (item.keys.join(',') || 'массив/не объект')).join('; ');
+  sourceStatus.sstats.diagnostic = 'SStats: ' + attemptSummary;
   const games = arr(gamesPayload);
   let leaguesPayload = null;
   try {
@@ -487,6 +496,14 @@ async function fetchSStats() {
     const raw = pick(game, 'Date', 'DateTime', 'eventDate', 'StartTime', 'Kickoff', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start');
     return !raw || dateKey(raw) === date;
   });
+  if (!todayGames.length) {
+    const sample = games[0];
+    const sampleKeys = sample && typeof sample === 'object' ? Object.keys(sample).slice(0, 24).join(',') : typeof sample;
+    const sampleDate = sample && typeof sample === 'object'
+      ? pick(sample, 'Date', 'DateTime', 'eventDate', 'StartTime', 'Kickoff', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start')
+      : null;
+    sourceStatus.sstats.diagnostic += '; итог: строк после разбора ' + games.length + ', после фильтра даты ' + todayGames.length + ', поля первого матча: ' + (sampleKeys || 'нет') + ', дата первого матча: ' + (sampleDate ?? 'не найдена');
+  }
   // Glicko/xG is a separate documented endpoint, not part of /games/list.
   // Query it concurrently so the table gets actual model fields instead of empty placeholders.
   const glickoTargets = firstError ? [] : todayGames.slice(0, 10); // Skip optional enrichment after a slow fallback, preserving time for the data response.
