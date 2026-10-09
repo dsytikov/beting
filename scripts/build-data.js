@@ -470,7 +470,7 @@ async function fetchSStats() {
   const chosen = attempts.find(item => item.matching && item.matching.length)
     || attempts.find(item => item.rows && item.rows.length)
     || attempts.find(item => item.payload);
-  gamesPayload = chosen ? chosen.payload : null;
+  const gamesPayload = chosen ? chosen.payload : null;
   const attemptSummary = attempts.map(item => item.error
     ? item.label + ': timeout/ошибка ' + item.error
     : item.label + ': count=' + item.count + ', строк=' + item.rows.length + ', совпало по дате=' + item.matching.length + ', ключи=' + (item.keys.join(',') || 'массив/не объект')).join('; ');
