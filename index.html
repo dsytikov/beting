@@ -27,6 +27,12 @@
             <p id="error-message"></p>
         </div>
 
+        <nav class="source-filter-bar" aria-label="Выбор источника прогнозов">
+            <button type="button" class="source-filter-btn active" data-source="all" aria-pressed="true">Все прогнозы</button>
+            <button type="button" class="source-filter-btn" data-source="BSD" aria-pressed="false">Прогнозы BSD</button>
+            <button type="button" class="source-filter-btn" data-source="SStats" aria-pressed="false">Прогнозы S-Stats</button>
+        </nav>
+
         <div class="table-wrapper">
             <table id="predictions-table">
                 <thead>
