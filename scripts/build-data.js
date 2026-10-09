@@ -192,6 +192,273 @@ function normalizeBsd(event, prediction, leagueNames = new Map()) {
     over25 !== null ? `ТМ 2.5: ${percentUnder(over25)}` : lambda !== null ? `ТМ 2.5 Poisson: ${percent(1 - poissonOver(lambda, 2))}` : null,
     over35 !== null ? `ТМ 3.5: ${percentUnder(over35)}` : lambda !== null ? `ТМ 3.5 Poisson: ${percent(1 - poissonOver(lambda, 3))}` : null
   ].filter(Boolean);
+  const cardParts = [
+    card25 !== null ? `ТБ 2.5: ${percent(card25)}` : null,
+    card35 !== null ? `ТБ 3.5: ${percent(card35)}` : null
+  ].filter(Boolean);
+  return {
+    source: 'BSD',
+    eventId: first(pick(sourceEvent, 'id', 'eventId', 'matchId'), pick(sourcePrediction, 'eventId', 'matchId'), pick(sourcePrediction.event || {}, 'id')),
+    time: eventDate,
+    league: leagueNameFor(sourceEvent, leagueNames),
+    home: teamName(home),
+    away: teamName(away),
+    outcome,
+    probabilityOutcome,
+    totalGoals: goalParts.join(' / ') || (xgHome !== null || xgAway !== null ? `xG ${xgHome ?? '—'}–${xgAway ?? '—'}` : '—'),
+    underGoals: underGoalParts.join(' / ') || '—',
+    individualTotals: xgHome !== null || xgAway !== null ? `Х ${xgHome ?? '—'} / Г ${xgAway ?? '—'} xG` : '—',
+    corners: cornerParts.length ? `ТБ угл. ${cornerParts.join(' / ')}` : '—',
+    yellowCards: cardParts.length ? cardParts.join(' / ') : '—'
+  };
+}
+function normalizeSstats(game, glicko = null, leagueNames = new Map()) {
+  const detail = glicko?.data || glicko?.result || glicko || {};
+  const prediction = first(game.prediction, game.predictions, game.Prediction, detail.prediction, detail.predictions, detail, game) || game;
+  const markets = first(prediction.markets, prediction.Markets, prediction.predictions, prediction.Predictions, {}) || {};
+  const dateTime = first(pick(game, 'Date', 'DateTime', 'eventDate', 'startTime', 'Kickoff', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start'));
+  const home = first(pick(game, 'HomeTeamName', 'homeTeamName', 'homeTeam', 'home', 'HomeTeam', 'teamHome'), pick(game.HomeTeam || {}, 'name', 'Name', 'teamName'));
+  const away = first(pick(game, 'AwayTeamName', 'awayTeamName', 'awayTeam', 'away', 'AwayTeam', 'teamAway'), pick(game.AwayTeam || {}, 'name', 'Name', 'teamName'));
+  const homeProb = first(
+    pick(markets.match_result || markets.matchResult || {}, 'prob_home', 'probHome', 'homeProbability', 'homeWinProbability'),
+    deepPick(detail, ['prob_home', 'probHome', 'homeProbability', 'homeWinProbability', 'homeWinProb'])
+  );
+  let drawProb = first(
+    pick(markets.match_result || markets.matchResult || {}, 'prob_draw', 'probDraw', 'drawProbability'),
+    deepPick(detail, ['prob_draw', 'probDraw', 'drawProbability', 'drawProb'])
+  );
+  const awayProb = first(
+    pick(markets.match_result || markets.matchResult || {}, 'prob_away', 'probAway', 'awayProbability', 'awayWinProbability', 'awayWinProb'),
+    deepPick(detail, ['prob_away', 'probAway', 'awayProbability', 'awayWinProbability', 'awayWinProb'])
+  );
+  if (drawProb === null && homeProb !== null && awayProb !== null) {
+    const homeN = Number(homeProb);
+    const awayN = Number(awayProb);
+    const scale = homeN <= 1 && awayN <= 1 ? 1 : 100;
+    const residual = scale - homeN - awayN;
+    if (residual >= 0 && residual <= scale) drawProb = residual / scale <= 1 ? residual / scale : residual;
+  }
+  const winner = first(
+    pick(prediction, 'predictedWinner', 'winner', 'prediction', 'recommendedOutcome'),
+    deepPick(detail, ['predictedWinner', 'winner', 'recommendedOutcome'])
+  );
+  const hasProbs = [homeProb, drawProb, awayProb].some(v => v !== null && Number.isFinite(Number(v)));
+  const outcome = winner
+    ? ({ home: 'П1', homewin: 'П1', h: 'П1', '1': 'П1', draw: 'X', tie: 'X', d: 'X', away: 'П2', awaywin: 'П2', a: 'П2', '2': 'П2' })[String(winner).toLowerCase()] || String(winner)
+    : hasProbs ? `П1 ${percent(homeProb) ?? '—'} / X ${percent(drawProb) ?? '—'} / П2 ${percent(awayProb) ?? '—'}` : '—';
+  const probabilityOutcome = hasProbs
+    ? `П1 ${percent(homeProb) ?? '—'} / X ${percent(drawProb) ?? '—'} / П2 ${percent(awayProb) ?? '—'}`
+    : '—';
+  const xgHome = first(
+    deepPick(detail, ['homeXg', 'xgHome', 'homeExpectedGoals', 'expectedGoalsHome', 'homeXG', 'xGHome']),
+    deepPick(game, ['homeXg', 'xgHome', 'homeExpectedGoals', 'expectedGoalsHome'])
+  );
+  const xgAway = first(
+    deepPick(detail, ['awayXg', 'xgAway', 'awayExpectedGoals', 'expectedGoalsAway', 'awayXG', 'xGAway']),
+    deepPick(game, ['awayXg', 'xgAway', 'awayExpectedGoals', 'expectedGoalsAway'])
+  );
+  const over15 = deepPick(detail, ['prob_over_15', 'prob_over_1_5', 'over15Probability', 'over1_5Probability']);
+  const over25 = deepPick(detail, ['prob_over_25', 'prob_over_2_5', 'over25Probability', 'over2_5Probability']);
+  const over35 = deepPick(detail, ['prob_over_35', 'prob_over_3_5', 'over35Probability', 'over3_5Probability']);
+  const corners85 = deepPick(detail, ['prob_corners_over_85', 'cornersOver85Probability', 'prob_over_corners_8_5']);
+  const corners95 = deepPick(detail, ['prob_corners_over_95', 'cornersOver95Probability', 'prob_over_corners_9_5']);
+  const cards25 = deepPick(detail, ['prob_yellow_cards_over_25', 'yellowCardsOver25Probability', 'prob_cards_over_2_5']);
+  const cards35 = deepPick(detail, ['prob_yellow_cards_over_35', 'yellowCardsOver35Probability', 'prob_cards_over_3_5']);
+  const lambda = xgHome !== null && xgAway !== null ? Number(xgHome) + Number(xgAway) : null;
+'use strict';
+
+const fs = require('node:fs');
+
+const BSD_BASE = 'https://sports.bzzoiro.com/api/v2';
+const SSTATS_BASE = 'https://api.sstats.net';
+let date = new Date().toISOString().slice(0, 10);
+const errors = [];
+const sourceStatus = {
+  bsd: { ok: false, count: 0, message: '', diagnostic: '' },
+  sstats: { ok: false, count: 0, message: '', diagnostic: '' }
+};
+
+function arr(payload, depth = 0) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== 'object' || depth > 4) return [];
+  for (const key of ['results', 'Results', 'data', 'Data', 'items', 'Items', 'games', 'Games', 'events', 'Events', 'predictions', 'Predictions', 'matches', 'Matches', 'records', 'value']) {
+    if (Array.isArray(payload[key])) return payload[key];
+  }
+  for (const key of ['data', 'Data', 'result', 'Result', 'response', 'Response']) {
+    if (payload[key] && typeof payload[key] === 'object') {
+      const nested = arr(payload[key], depth + 1);
+      if (nested.length) return nested;
+    }
+  }
+  return [];
+}
+function first(...values) {
+  return values.find(v => v !== undefined && v !== null && v !== '') ?? null;
+}
+function keyNorm(value) {
+  return String(value).replace(/[^a-z0-9]/gi, '').toLowerCase();
+}
+function pick(obj, ...keys) {
+  if (!obj || typeof obj !== 'object') return null;
+  const wanted = new Set(keys.map(keyNorm));
+  for (const [key, value] of Object.entries(obj)) {
+    if (wanted.has(keyNorm(key)) && value !== undefined && value !== null && value !== '') return value;
+  }
+  return null;
+}
+function deepPick(obj, keys, depth = 0) {
+  if (!obj || typeof obj !== 'object' || depth > 5) return null;
+  const direct = pick(obj, ...keys);
+  if (direct !== null) return direct;
+  for (const value of Object.values(obj)) {
+    if (value && typeof value === 'object') {
+      const found = deepPick(value, keys, depth + 1);
+      if (found !== null) return found;
+    }
+  }
+  return null;
+}
+function percent(value) {
+  if (value === undefined || value === null || !Number.isFinite(Number(value))) return null;
+  let number = Number(value);
+  if (number > 0 && number < 1) number *= 100;
+  return `${number.toFixed(1)}%`;
+}
+function percentUnder(overValue) {
+  if (overValue === undefined || overValue === null || !Number.isFinite(Number(overValue))) return null;
+  const over = Number(overValue);
+  const scale = over <= 1 ? 1 : 100;
+  return percent(Math.max(0, Math.min(scale, scale - over)));
+}
+function poissonOver(lambda, threshold) {
+  const mean = Number(lambda);
+  if (!Number.isFinite(mean) || mean < 0 || mean > 12) return null;
+  let probability = Math.exp(-mean);
+  let cumulative = probability;
+  for (let goals = 1; goals <= threshold; goals++) {
+    probability *= mean / goals;
+    cumulative += probability;
+  }
+  return Math.max(0, Math.min(1, 1 - cumulative));
+}
+function safeError(error) {
+  return String(error?.message || error).replace(/https?:\/\/\S+/g, '[API URL]').slice(0, 220);
+}
+function dateKey(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const raw = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  const european = raw.match(/^(\d{2})\.(\d{2})\.(\d{4})/);
+  if (european) return `${european[3]}-${european[2]}-${european[1]}`;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+}
+async function getJson(url, headers = {}, timeoutMs = 5000) {
+  const response = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
+  const body = await response.text();
+  if (!response.ok) throw new Error(`HTTP ${response.status}: ${body.slice(0, 160)}`);
+  try { return JSON.parse(body); } catch { throw new Error('API вернул не JSON'); }
+}
+function teamName(value) {
+  if (value && typeof value === 'object') return first(
+    pick(value, 'name', 'teamName', 'displayName', 'title', 'shortName', 'short_name', 'label', 'value'),
+    '—'
+  );
+  return first(value, '—');
+}
+function leagueNameFor(item, leagueNames = new Map()) {
+  const raw = first(
+    pick(item, 'leagueName', 'competitionName', 'tournamentName', 'divisionName', 'league', 'competition', 'tournament', 'division'),
+    pick(item?.event, 'leagueName', 'competitionName', 'tournamentName', 'league', 'competition', 'tournament'),
+    pick(item?.league, 'name', 'Name', 'title', 'Title')
+  );
+  if (raw && typeof raw === 'object') {
+    const name = teamName(raw);
+    if (name !== '—') return name;
+    const id = pick(raw, 'id', 'leagueId', 'competitionId', 'tournamentId');
+    if (id !== null && leagueNames.has(String(id))) return leagueNames.get(String(id));
+  } else if (raw !== null && !/^\d+$/.test(String(raw))) {
+    return String(raw);
+  }
+  const id = first(
+    pick(item, 'leagueId', 'competitionId', 'tournamentId', 'divisionId'),
+    pick(item?.league, 'id', 'leagueId'),
+    pick(item?.event, 'leagueId', 'competitionId', 'tournamentId'),
+    raw !== null && typeof raw !== 'object' && /^\d+$/.test(String(raw)) ? raw : null
+  );
+  return id !== null && leagueNames.has(String(id)) ? leagueNames.get(String(id)) : (id !== null ? String(id) : '—');
+}
+function normalizeBsd(event, prediction, leagueNames = new Map()) {
+  const nestedEvent = first(prediction?.event, prediction?.match, prediction?.fixture, {}) || {};
+  const sourceEvent = { ...(event && typeof event === 'object' ? event : {}), ...(nestedEvent && typeof nestedEvent === 'object' ? nestedEvent : {}) };
+  const sourcePrediction = prediction || {};
+  const marketRoot = first(sourcePrediction.markets, sourcePrediction.Markets, sourcePrediction.predictions, sourcePrediction.Predictions, sourcePrediction.data?.markets, sourcePrediction.data?.predictions, {}) || {};
+  const result = first(pick(marketRoot, 'match_result', 'matchResult', 'result', '1x2', 'matchWinner'), {}) || {};
+  const ou = first(pick(marketRoot, 'over_under', 'total_goals', 'totalGoals', 'goals', 'overUnder'), {}) || {};
+  const corners = first(pick(marketRoot, 'corners', 'total_corners', 'totalCorners', 'cornerKicks'), {}) || {};
+  const expected = first(pick(marketRoot, 'expected_goals', 'expectedGoals', 'xg', 'goalExpectancy'), {}) || {};
+  const cards = first(pick(marketRoot, 'yellow_cards', 'yellowCards', 'cards', 'booking_points', 'totalCards'), {}) || {};
+  const predicted = first(
+    pick(result, 'predicted', 'predicted_result', 'predictedResult', 'prediction', 'winner', 'outcome', 'recommended'),
+    pick(sourcePrediction.recommendations || {}, 'favorite', 'predicted', 'winner'),
+    pick(sourcePrediction, 'predictedWinner', 'predicted_result', 'predictedResult', 'predicted', 'winner')
+  );
+  const probHomeRaw = first(
+    pick(result, 'prob_home', 'probHome', 'prob_home_win', 'probHomeWin', 'home_win_prob', 'homeWinProb', 'homeProbability', 'homeWinProbability', 'home'),
+    deepPick(sourcePrediction, ['prob_home', 'probHome', 'prob_home_win', 'probHomeWin', 'home_win_prob', 'homeWinProb', 'home_win_probability', 'homeWinProbability'])
+  );
+  const probDrawRaw = first(
+    pick(result, 'prob_draw', 'probDraw', 'draw_prob', 'drawProb', 'drawProbability', 'draw'),
+    deepPick(sourcePrediction, ['prob_draw', 'probDraw', 'draw_prob', 'drawProb', 'drawProbability'])
+  );
+  const probAwayRaw = first(
+    pick(result, 'prob_away', 'probAway', 'prob_away_win', 'probAwayWin', 'away_win_prob', 'awayWinProb', 'awayProbability', 'awayWinProbability', 'away'),
+    deepPick(sourcePrediction, ['prob_away', 'probAway', 'prob_away_win', 'probAwayWin', 'away_win_prob', 'awayWinProb', 'away_win_probability', 'awayWinProbability'])
+  );
+  const probHome = percent(probHomeRaw);
+  const probDraw = percent(probDrawRaw);
+  const probAway = percent(probAwayRaw);
+  const hasResultProbs = [probHomeRaw, probDrawRaw, probAwayRaw].some(value => value !== null && Number.isFinite(Number(value)));
+  const probabilityOutcome = hasResultProbs
+    ? `П1 ${probHome ?? '—'} / X ${probDraw ?? '—'} / П2 ${probAway ?? '—'}`
+    : '—';
+  const outcome = predicted
+    ? ({ home: 'П1', homewin: 'П1', h: 'П1', '1': 'П1', draw: 'X', tie: 'X', d: 'X', away: 'П2', awaywin: 'П2', a: 'П2', '2': 'П2' })[String(predicted).toLowerCase()] || String(predicted)
+    : hasResultProbs
+      ? `П1 ${probHome ?? '—'} / X ${probDraw ?? '—'} / П2 ${probAway ?? '—'}`
+      : '—';
+  const over15 = pick(ou, 'prob_over_15', 'prob_over_1_5', 'over15Probability', 'over1_5');
+  const over25 = pick(ou, 'prob_over_25', 'prob_over_2_5', 'over25Probability', 'over2_5');
+  const over35 = pick(ou, 'prob_over_35', 'prob_over_3_5', 'over35Probability', 'over3_5');
+  const corner85 = pick(corners, 'prob_over_85', 'prob_over_8_5', 'over85Probability', 'over8_5');
+  const corner95 = pick(corners, 'prob_over_95', 'prob_over_9_5', 'over95Probability', 'over9_5');
+  const corner105 = pick(corners, 'prob_over_105', 'prob_over_10_5', 'over105Probability', 'over10_5');
+  const card25 = pick(cards, 'prob_over_25', 'prob_over_2_5', 'over25Probability', 'over2_5');
+  const card35 = pick(cards, 'prob_over_35', 'prob_over_3_5', 'over35Probability', 'over3_5');
+  const xgHome = first(pick(expected, 'home', 'homeXg', 'xgHome', 'homeExpectedGoals', 'expected_home_goals', 'expectedHomeGoals'), deepPick(sourcePrediction, ['homeXg', 'xgHome', 'homeExpectedGoals']));
+  const xgAway = first(pick(expected, 'away', 'awayXg', 'xgAway', 'awayExpectedGoals', 'expected_away_goals', 'expectedAwayGoals'), deepPick(sourcePrediction, ['awayXg', 'xgAway', 'awayExpectedGoals']));
+  const eventDate = first(
+    pick(sourceEvent, 'eventDate', 'startTime', 'kickoff', 'date', 'dateTime', 'matchDate', 'start'),
+    pick(sourcePrediction, 'eventDate', 'startTime', 'kickoff', 'date', 'dateTime', 'matchDate', 'start')
+  );
+  const home = first(pick(sourceEvent, 'homeTeam', 'home', 'teamHome', 'localTeam', 'homeTeamName'), pick(sourcePrediction, 'homeTeam', 'home', 'teamHome'));
+  const away = first(pick(sourceEvent, 'awayTeam', 'away', 'teamAway', 'visitorTeam', 'awayTeamName'), pick(sourcePrediction, 'awayTeam', 'away', 'teamAway'));
+  const cornerParts = [
+    corner85 !== null ? `8.5: ${percent(corner85)}` : null,
+    corner95 !== null ? `9.5: ${percent(corner95)}` : null,
+    corner105 !== null ? `10.5: ${percent(corner105)}` : null
+  ].filter(Boolean);
+  const lambda = xgHome !== null && xgAway !== null ? Number(xgHome) + Number(xgAway) : null;
+  const goalParts = [
+    over15 !== null ? `ТБ 1.5: ${percent(over15)}` : lambda !== null ? `ТБ 1.5 Poisson: ${percent(poissonOver(lambda, 1))}` : null,
+    over25 !== null ? `ТБ 2.5: ${percent(over25)}` : lambda !== null ? `ТБ 2.5 Poisson: ${percent(poissonOver(lambda, 2))}` : null,
+    over35 !== null ? `ТБ 3.5: ${percent(over35)}` : lambda !== null ? `ТБ 3.5 Poisson: ${percent(poissonOver(lambda, 3))}` : null
+  ].filter(Boolean);
+  const underGoalParts = [
+    over15 !== null ? `ТМ 1.5: ${percentUnder(over15)}` : lambda !== null ? `ТМ 1.5 Poisson: ${percent(1 - poissonOver(lambda, 1))}` : null,
+    over25 !== null ? `ТМ 2.5: ${percentUnder(over25)}` : lambda !== null ? `ТМ 2.5 Poisson: ${percent(1 - poissonOver(lambda, 2))}` : null,
+    over35 !== null ? `ТМ 3.5: ${percentUnder(over35)}` : lambda !== null ? `ТМ 3.5 Poisson: ${percent(1 - poissonOver(lambda, 3))}` : null
+  ].filter(Boolean);
   const underGoalParts = [
     over15 !== null ? `ТМ 1.5: ${percentUnder(over15)}` : lambda !== null ? `ТМ 1.5 Poisson: ${percent(1 - poissonOver(lambda, 1))}` : null,
     over25 !== null ? `ТМ 2.5: ${percentUnder(over25)}` : lambda !== null ? `ТМ 2.5 Poisson: ${percent(1 - poissonOver(lambda, 2))}` : null,
