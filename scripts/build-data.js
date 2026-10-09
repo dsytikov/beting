@@ -436,20 +436,18 @@ async function fetchSStats() {
   const token = process.env.SSTATS_TOKEN || '';
   if (!token) throw new Error('Не задан SSTATS_TOKEN в Environment Variables Vercel');
   const apiKey = `apikey=${encodeURIComponent(token)}`;
-  // Run several lightweight list queries in parallel: the Date filter can hang,
-  // while From/To may return a valid envelope with count=0. Prefer exact-date rows.
-  // Fetch optional league metadata in parallel with the game-list queries to stay within Vercel's time budget.
+  // Date/Today/Upcoming repeatedly time out on SStats. Use the exact range first,
+  // then a documented Year query as a fallback and filter the returned rows locally.
+  // Fetch league metadata concurrently to reduce total serverless execution time.
   const leaguesPromise = getJson(`${SSTATS_BASE}/leagues?${apiKey}`, {}, 1800).catch(() => null);
   const querySpecs = [
-    { label: 'Date', query: { Date: date } },
-    { label: 'Today', query: { Today: 'true' } },
-    { label: 'Upcoming', query: { Upcoming: 'true' } },
-    { label: 'From/To', query: { From: date, To: date } }
+    { label: 'From/To', query: { From: date, To: date, Order: '-1' }, timeoutMs: 4500 },
+    { label: 'Year fallback', query: { Year: date.slice(0, 4), Order: '-1' }, timeoutMs: 5500 }
   ];
   const attempts = await Promise.all(querySpecs.map(async spec => {
     try {
-      const queryParams = new URLSearchParams({ ...spec.query, Limit: '200', Offset: '0', apikey: token });
-      const payload = await getJson(SSTATS_BASE + '/games/list?' + queryParams.toString(), {}, 5000);
+      const queryParams = new URLSearchParams({ ...spec.query, Limit: '300', Offset: '0', apikey: token });
+      const payload = await getJson(SSTATS_BASE + '/games/list?' + queryParams.toString(), {}, spec.timeoutMs);
       const rows = arr(payload);
       const matching = rows.filter(game => {
         const raw = pick(game, 'Date', 'DateTime', 'eventDate', 'StartTime', 'StartDate', 'StartDateTime', 'GameDate', 'GameDateTime', 'UtcDate', 'DateUtc', 'DateLocal', 'Kickoff', 'KickoffTime', 'StartTimeUtc', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start');
