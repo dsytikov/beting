@@ -38,8 +38,8 @@ function dateKey(value) {
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
 }
-async function getJson(url, headers = {}) {
-  const response = await fetch(url, { headers, signal: AbortSignal.timeout(5000) });
+async function getJson(url, headers = {}, timeoutMs = 5000) {
+  const response = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
   const body = await response.text();
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${body.slice(0, 160)}`);
   try { return JSON.parse(body); } catch { throw new Error('API вернул не JSON'); }
@@ -56,15 +56,27 @@ function normalizeBsd(event, prediction) {
   const corners = markets.corners || markets.total_corners || {};
   const expected = markets.expected_goals || markets.expectedGoals || {};
   const predicted = first(result.predicted, prediction?.recommendations?.favorite);
+  const probHome = percent(result.prob_home);
+  const probDraw = percent(result.prob_draw);
+  const probAway = percent(result.prob_away);
+  const hasResultProbs = [result.prob_home, result.prob_draw, result.prob_away]
+    .some(value => value !== undefined && value !== null && Number.isFinite(Number(value)));
   const outcome = predicted
     ? ({ home: 'П1', draw: 'X', away: 'П2' })[String(predicted).toLowerCase()] || String(predicted)
-    : first(result.prob_home, result.prob_draw, result.prob_away) !== null
-      ? `П1 ${percent(result.prob_home)} / X ${percent(result.prob_draw)} / П2 ${percent(result.prob_away)}`
+    : hasResultProbs
+      ? `П1 ${probHome ?? '—'} / X ${probDraw ?? '—'} / П2 ${probAway ?? '—'}`
       : '—';
+  const over15 = first(ou.prob_over_15, ou.prob_over_1_5);
   const over25 = first(ou.prob_over_25, ou.prob_over_2_5);
-  const corner95 = first(corners.prob_over_95, corners.prob_over_9_5);
+  const over35 = first(ou.prob_over_35, ou.prob_over_3_5);
   const corner85 = first(corners.prob_over_85, corners.prob_over_8_5);
-  const cornerValue = first(corner95, corner85);
+  const corner95 = first(corners.prob_over_95, corners.prob_over_9_5);
+  const corner105 = first(corners.prob_over_105, corners.prob_over_10_5);
+  const cornerParts = [
+    corner85 !== null ? `8.5: ${percent(corner85)}` : null,
+    corner95 !== null ? `9.5: ${percent(corner95)}` : null,
+    corner105 !== null ? `10.5: ${percent(corner105)}` : null
+  ].filter(Boolean);
   const eventDate = first(event.event_date, event.start_time, event.kickoff, event.date);
   return {
     source: 'BSD',
@@ -74,10 +86,13 @@ function normalizeBsd(event, prediction) {
     home: teamName(first(event.home_team, event.home, event.HomeTeam, '—')),
     away: teamName(first(event.away_team, event.away, event.AwayTeam, '—')),
     outcome,
-    totalGoals: over25 !== null ? `ТБ 2.5: ${percent(over25)}`
-      : first(expected.home, expected.away) !== null ? `xG ${expected.home ?? '—'}–${expected.away ?? '—'}` : '—',
+    totalGoals: [
+      over15 !== null ? `ТБ 1.5: ${percent(over15)}` : null,
+      over25 !== null ? `ТБ 2.5: ${percent(over25)}` : null,
+      over35 !== null ? `ТБ 3.5: ${percent(over35)}` : null
+    ].filter(Boolean).join(' / ') || (first(expected.home, expected.away) !== null ? `xG ${expected.home ?? '—'}–${expected.away ?? '—'}` : '—'),
     individualTotals: first(expected.home, expected.away) !== null ? `Х ${expected.home ?? '—'} / Г ${expected.away ?? '—'} xG` : '—',
-    corners: cornerValue !== null ? `ТБ угл. ${corner95 !== null ? '9.5' : '8.5'}: ${percent(cornerValue)}` : '—',
+    corners: cornerParts.length ? `ТБ угл. ${cornerParts.join(' / ')}` : '—',
     yellowCards: '—'
   };
 }
@@ -141,19 +156,44 @@ async function fetchBSD() {
   }
 
   if (events.length) {
-    let matched = 0;
-    const rows = events.map(event => {
-      const byId = predictionByEvent.get(String(event.id));
+    const matchedPredictions = events.map(event => {
+      const byId = predictionByEvent.get(String(first(event.id, event.event_id, event.eventId)));
       const byTeams = predictionByTeams.get(eventTeamsKey(event));
-      const prediction = byId || byTeams || null;
-      if (prediction) matched += 1;
-      return normalizeBsd(event, prediction);
+      return byId || byTeams || null;
     });
+
+    // The docs expose a per-event prediction endpoint as a fallback. Limit the
+    // fallback fan-out so a sparse prediction feed cannot exhaust the serverless budget.
+    const missingUpcoming = [];
+    events.forEach((event, index) => {
+      const status = String(first(event.status, event.match_status, '')).toLowerCase();
+      const kickoff = first(event.event_date, event.start_time, event.kickoff, event.date);
+      if (!matchedPredictions[index] && kickoff && dateKey(kickoff) === date &&
+          (!status || status === 'upcoming') && missingUpcoming.length < 12) {
+        missingUpcoming.push({ event, index });
+      }
+    });
+    await Promise.all(missingUpcoming.map(async ({ event, index }) => {
+      const eventId = first(event.id, event.event_id, event.eventId);
+      if (eventId === null) return;
+      try {
+        const payload = await getJson(`${BSD_BASE}/events/${encodeURIComponent(eventId)}/prediction/`, headers, 2500);
+        const candidate = payload?.prediction || payload?.data?.prediction || payload?.data || payload;
+        if (candidate && (candidate.markets || candidate.predictions || candidate.recommendations)) {
+          matchedPredictions[index] = candidate;
+        }
+      } catch {
+        // A per-event prediction can legitimately be absent; keep other matches.
+      }
+    }));
+
+    const matched = matchedPredictions.filter(Boolean).length;
+    const rows = events.map((event, index) => normalizeBsd(event, matchedPredictions[index]));
     if (predictionsResult.status === 'rejected') {
       sourceStatus.bsd.message = `Расписание получено, прогнозы BSD недоступны: ${safeError(predictionsResult.reason)}`;
     } else if (predictions.length && matched === 0) {
-      sourceStatus.bsd.message = `Получено ${events.length} матчей и ${predictions.length} прогнозов BSD, но не удалось сопоставить их по ID или названиям команд`;
-    } else if (predictionsResult.status === 'fulfilled') {
+      sourceStatus.bsd.message = `Получено ${events.length} матчей и ${predictions.length} прогнозов BSD, но сопоставить прогнозы не удалось`;
+    } else {
       sourceStatus.bsd.message = `Прогнозы BSD сопоставлены: ${matched} из ${events.length} матчей`;
     }
     return rows;
