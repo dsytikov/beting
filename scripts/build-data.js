@@ -236,10 +236,11 @@ function normalizeSstats(game, glicko = null, leagueNames = new Map()) {
   const corners95 = deepPick(detail, ['prob_corners_over_95', 'cornersOver95Probability', 'prob_over_corners_9_5']);
   const cards25 = deepPick(detail, ['prob_yellow_cards_over_25', 'yellowCardsOver25Probability', 'prob_cards_over_2_5']);
   const cards35 = deepPick(detail, ['prob_yellow_cards_over_35', 'yellowCardsOver35Probability', 'prob_cards_over_3_5']);
+  const lambda = xgHome !== null && xgAway !== null ? Number(xgHome) + Number(xgAway) : null;
   const goalParts = [
-    over15 !== null ? `ТБ 1.5: ${percent(over15)}` : null,
-    over25 !== null ? `ТБ 2.5: ${percent(over25)}` : null,
-    over35 !== null ? `ТБ 3.5: ${percent(over35)}` : null
+    over15 !== null ? `ТБ 1.5: ${percent(over15)}` : lambda !== null ? `ТБ 1.5 Poisson: ${percent(poissonOver(lambda, 1))}` : null,
+    over25 !== null ? `ТБ 2.5: ${percent(over25)}` : lambda !== null ? `ТБ 2.5 Poisson: ${percent(poissonOver(lambda, 2))}` : null,
+    over35 !== null ? `ТБ 3.5: ${percent(over35)}` : lambda !== null ? `ТБ 3.5 Poisson: ${percent(poissonOver(lambda, 3))}` : null
   ].filter(Boolean);
   const leagueId = first(pick(game, 'LeagueId', 'leagueId', 'LeagueID'), pick(game.League || {}, 'id', 'Id'));
   let league = leagueNameFor(game, leagueNames);
