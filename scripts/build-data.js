@@ -535,7 +535,7 @@ async function runSource(name, fn) {
     sourceStatus[name] = {
       ok: true,
       count: rows.length,
-      message: priorMessage || (rows.length ? '' : `API ответил, но матчи за ${date} не найдены или формат ответа не распознан`),
+      message: priorMessage || (rows.length ? '' : [`API ответил, но матчи за ${date} не найдены или формат ответа не распознан`, diagnostic].filter(Boolean).join(' — ')),
       diagnostic
     };
     if (!rows.length) errors.push(`${name === 'bsd' ? 'BSD' : 'SStats'}: ${sourceStatus[name].message}`);
