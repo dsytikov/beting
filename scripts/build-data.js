@@ -412,4 +412,4 @@ if (require.main === module) {
   }).catch(error => { console.error(error); process.exitCode = 1; });
 }
 
-module.exports = { buildData };
+module.exports = { buildData, normalizeBsd, normalizeSstats, arr, dateKey };
