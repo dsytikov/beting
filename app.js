@@ -1,8 +1,9 @@
 /* Football predictions UI. Vercel serves this static UI and the Node.js /api/data function. */
 const $ = (id) => document.getElementById(id);
 let allPredictions = [];
-let sortKey = 'time';
-let sortAscending = true;
+let sortKey = 'maxProbability';
+let sortAscending = false;
+const MIN_DISPLAY_PROBABILITY = 80;
 
 function text(value, fallback = '—') {
   if (value === null || value === undefined || value === '') return fallback;
@@ -13,8 +14,49 @@ function formatTime(value) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 }
+function probabilityParts(value) {
+  if (value === null || value === undefined || value === '') return [];
+  return String(value).split(/\\s*\\/\\s*/).map((part) => {
+    const match = part.match(/(\\d+(?:[.,]\\d+)?)\\s*%/);
+    return { part: part.trim(), probability: match ? Number.parseFloat(match[1].replace(',', '.')) : null };
+  });
+}
+function maxProbability(item) {
+  const fields = [
+    item.probabilityOutcome,
+    item.totalGoals,
+    item.underGoals,
+    item.individualTotals,
+    item.corners
+  ];
+  return fields.flatMap(probabilityParts)
+    .reduce((max, entry) => entry.probability === null ? max : Math.max(max, entry.probability), 0);
+}
+function filterProbabilityText(value) {
+  if (value === null || value === undefined || value === '') return value;
+  const parts = probabilityParts(value);
+  if (!parts.some((part) => part.probability !== null)) return value;
+  const kept = parts.filter((part) => part.probability === null || part.probability >= MIN_DISPLAY_PROBABILITY);
+  return kept.map((part) => part.part).join(' / ') || '—';
+}
+function preparePrediction(item) {
+  const peak = maxProbability(item);
+  return {
+    ...item,
+    maxProbability: peak,
+    probabilityOutcome: filterProbabilityText(item.probabilityOutcome),
+    totalGoals: filterProbabilityText(item.totalGoals),
+    underGoals: filterProbabilityText(item.underGoals),
+    individualTotals: filterProbabilityText(item.individualTotals),
+    corners: filterProbabilityText(item.corners)
+  };
+}
 function sortPredictions(rows) {
   return [...rows].sort((a, b) => {
+    if (sortKey === 'maxProbability') {
+      const result = (a.maxProbability || 0) - (b.maxProbability || 0);
+      return sortAscending ? result : -result;
+    }
     let left = a[sortKey] ?? '';
     let right = b[sortKey] ?? '';
     if (sortKey === 'time') {
@@ -34,29 +76,29 @@ function addCell(row, value, className) {
   if (className) cell.className = className;
   row.appendChild(cell);
 }
-function hasProbabilityOver80(item) {
-  // Flag the entire match row when any displayed outcome/market probability exceeds 80%.
-  const fields = [
-    item.probabilityOutcome,
-    item.totalGoals,
-    item.underGoals,
-    item.individualTotals,
-    item.corners
-  ];
-  return fields.some((value) => {
-    if (value === null || value === undefined) return false;
-    const matches = String(value).match(/(\d+(?:[.,]\d+)?)\s*%/g) || [];
-    return matches.some((part) => Number.parseFloat(part.replace('%', '').replace(',', '.')) > 80);
-  });
+function heatmapColor(probability) {
+  // 80% is pale green; increasingly strong probabilities move toward dark green.
+  const ratio = Math.max(0, Math.min(1, (probability - MIN_DISPLAY_PROBABILITY) / 20));
+  const pale = [220, 252, 231];
+  const dark = [20, 83, 45];
+  const rgb = pale.map((start, index) => Math.round(start + (dark[index] - start) * ratio));
+  return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
 }
 function renderTable() {
   const tbody = $('table-body');
   tbody.replaceChildren();
-  const rows = sortPredictions(allPredictions);
+  const qualified = allPredictions
+    .map(preparePrediction)
+    .filter((item) => item.maxProbability >= MIN_DISPLAY_PROBABILITY);
+  const rows = sortPredictions(qualified);
+  $('empty-state').textContent = 'Нет матчей с вероятностью 80% или выше.';
   $('empty-state').classList.toggle('hidden', rows.length > 0);
   for (const item of rows) {
     const tr = document.createElement('tr');
-    if (hasProbabilityOver80(item)) tr.classList.add('high-probability-row');
+    tr.classList.add('high-probability-row');
+    tr.style.backgroundColor = heatmapColor(item.maxProbability);
+    tr.style.color = item.maxProbability >= 93 ? '#f8fafc' : '#10251a';
+    tr.title = `Максимальная вероятность: ${item.maxProbability.toFixed(1)}%`;
     addCell(tr, formatTime(item.time));
     addCell(tr, item.league);
     addCell(tr, item.home);
