@@ -57,6 +57,12 @@ function percent(value) {
   if (number > 0 && number < 1) number *= 100;
   return `${number.toFixed(1)}%`;
 }
+function percentUnder(overValue) {
+  if (overValue === undefined || overValue === null || !Number.isFinite(Number(overValue))) return null;
+  const over = Number(overValue);
+  const scale = over <= 1 ? 1 : 100;
+  return percent(Math.max(0, Math.min(scale, scale - over)));
+}
 function poissonOver(lambda, threshold) {
   const mean = Number(lambda);
   if (!Number.isFinite(mean) || mean < 0 || mean > 12) return null;
@@ -181,6 +187,16 @@ function normalizeBsd(event, prediction, leagueNames = new Map()) {
     over25 !== null ? `ТБ 2.5: ${percent(over25)}` : lambda !== null ? `ТБ 2.5 Poisson: ${percent(poissonOver(lambda, 2))}` : null,
     over35 !== null ? `ТБ 3.5: ${percent(over35)}` : lambda !== null ? `ТБ 3.5 Poisson: ${percent(poissonOver(lambda, 3))}` : null
   ].filter(Boolean);
+  const underGoalParts = [
+    over15 !== null ? `ТМ 1.5: ${percentUnder(over15)}` : lambda !== null ? `ТМ 1.5 Poisson: ${percent(1 - poissonOver(lambda, 1))}` : null,
+    over25 !== null ? `ТМ 2.5: ${percentUnder(over25)}` : lambda !== null ? `ТМ 2.5 Poisson: ${percent(1 - poissonOver(lambda, 2))}` : null,
+    over35 !== null ? `ТМ 3.5: ${percentUnder(over35)}` : lambda !== null ? `ТМ 3.5 Poisson: ${percent(1 - poissonOver(lambda, 3))}` : null
+  ].filter(Boolean);
+  const underGoalParts = [
+    over15 !== null ? `ТМ 1.5: ${percentUnder(over15)}` : lambda !== null ? `ТМ 1.5 Poisson: ${percent(1 - poissonOver(lambda, 1))}` : null,
+    over25 !== null ? `ТМ 2.5: ${percentUnder(over25)}` : lambda !== null ? `ТМ 2.5 Poisson: ${percent(1 - poissonOver(lambda, 2))}` : null,
+    over35 !== null ? `ТМ 3.5: ${percentUnder(over35)}` : lambda !== null ? `ТМ 3.5 Poisson: ${percent(1 - poissonOver(lambda, 3))}` : null
+  ].filter(Boolean);
   const cardParts = [
     card25 !== null ? `ТБ 2.5: ${percent(card25)}` : null,
     card35 !== null ? `ТБ 3.5: ${percent(card35)}` : null
@@ -195,6 +211,7 @@ function normalizeBsd(event, prediction, leagueNames = new Map()) {
     outcome,
     probabilityOutcome,
     totalGoals: goalParts.join(' / ') || (xgHome !== null || xgAway !== null ? `xG ${xgHome ?? '—'}–${xgAway ?? '—'}` : '—'),
+    underGoals: underGoalParts.join(' / ') || '—',
     individualTotals: xgHome !== null || xgAway !== null ? `Х ${xgHome ?? '—'} / Г ${xgAway ?? '—'} xG` : '—',
     corners: cornerParts.length ? `ТБ угл. ${cornerParts.join(' / ')}` : '—',
     yellowCards: cardParts.length ? cardParts.join(' / ') : '—'
@@ -279,6 +296,7 @@ function normalizeSstats(game, glicko = null, leagueNames = new Map()) {
     outcome,
     probabilityOutcome,
     totalGoals: goalParts.join(' / ') || (xgHome !== null || xgAway !== null ? `xG сумма: ${(Number(xgHome || 0) + Number(xgAway || 0)).toFixed(2)}` : '—'),
+    underGoals: underGoalParts.join(' / ') || '—',
     individualTotals: xgHome !== null || xgAway !== null ? `Х ${xgHome ?? '—'} / Г ${xgAway ?? '—'} xG` : '—',
     corners: cornerParts.length ? `ТБ угл. ${cornerParts.join(' / ')}` : '—',
     yellowCards: cardParts.length ? cardParts.join(' / ') : '—'
