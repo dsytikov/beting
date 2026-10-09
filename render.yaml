@@ -6,7 +6,6 @@ services:
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /healthz
-    autoDeploy: true
     envVars:
       - key: BSD_TOKEN
         sync: false
