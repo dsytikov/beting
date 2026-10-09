@@ -1,25 +1,36 @@
 # Football predictions dashboard
 
-Static GitHub Pages dashboard for daily football matches.
+A small Node.js web service for a daily football predictions dashboard. It serves the UI and refreshes prediction data server-side, so API tokens are never exposed in browser JavaScript.
 
-## GitHub configuration
+## Deploy on Render (without GitHub Actions)
 
-In **Settings → Secrets and variables → Actions**, add either repository secrets or repository variables:
+1. Open the Render dashboard and choose **New → Blueprint**.
+2. Connect the GitHub account if needed and select this repository: `dsytikov/beting`.
+3. Render detects `render.yaml` and creates the `beting-dashboard` web service.
+4. Set the environment variables `BSD_TOKEN` and `SSTATS_TOKEN` in the Render service's Environment settings. Use the actual API tokens; never put them in repository files.
+5. Wait for the first deploy, then open the public `onrender.com` URL shown by Render.
 
-- `BSD_TOKEN` — API token for [Bzzoiro Sports Data](https://sports.bzzoiro.com/docs/).
-- `SSTATS_TOKEN` — API token for [SStats.net](https://api.sstats.net/docs/).
+Render auto-deploys when new commits land on the configured branch. GitHub Actions is not required.
 
-GitHub Actions reads them during the build and writes the API results to `data.json`. The tokens are not inserted into the website files. If the tokens are configured as repository variables, treat them as public values; repository secrets are preferred.
+## How refresh works
 
-The workflow runs on pushes to `main`, can be started manually from **Actions**, and refreshes every 30 minutes. GitHub Pages serves the generated static JSON; the browser does not call the data providers directly, avoiding browser CORS restrictions.
+- The Node.js service listens on the `PORT` provided by Render and exposes `/healthz` for health checks.
+- At startup it runs `scripts/build-data.js`, which requests data from Bzzoiro and SStats and writes `data.json`.
+- It attempts another refresh every 30 minutes while the service is running.
+- When the JSON is older than 30 minutes, a request to `/data.json` triggers a refresh. The dashboard's **Обновить** button also requests a refresh.
+- Tokens are read from Render environment variables on the server only.
+
+## Free-plan notes
+
+Render's free web services can spin down after inactivity and have an ephemeral filesystem. This service refreshes on startup and on demand, but it is not a guarantee of unattended, exact 30-minute refreshes while the service is asleep. For continuously scheduled refreshes, choose a suitable paid service or a separate scheduler.
 
 ## Data coverage
 
-BSD documented prediction fields include match-result probabilities, expected goals, totals and corners. Yellow-card predictions are shown as an em dash when a source does not provide them. Missing values are never invented. SStats response fields vary by endpoint; unsupported fields are shown as an em dash.
+The dashboard shows match result, total goals, team expected-goal indicators, corners and yellow cards where the providers expose usable fields. Missing data is shown as an em dash; it is not invented. The SStats endpoint and response fields still need validation against the account's real API responses.
 
 ## Troubleshooting
 
-- Open **Actions → Build predictions and deploy to GitHub Pages** and inspect the latest run.
-- If a token is missing or rejected, the dashboard displays the source status and error summary.
-- Confirm Pages is enabled with **GitHub Actions** as the build and deployment source.
-- The scheduled workflow can be delayed by GitHub; use **Run workflow** to refresh immediately.
+- Check the Render service's **Logs** for API errors.
+- Check that both tokens are set in the Render service's **Environment** settings and that the tokens have access to the relevant endpoints.
+- Open `/healthz` on the deployed service; it should return `{"ok":true}`.
+- If a provider returns an unexpected response format, update `scripts/build-data.js` based on the provider's actual response schema.
