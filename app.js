@@ -129,7 +129,6 @@ function renderTable() {
     addCell(tr, item.underGoals, 'prediction-cell');
     addCell(tr, item.corners, 'prediction-cell');
     addCell(tr, item.actualResult, 'result-cell');
-    addCell(tr, item.source, 'source-cell');
     tbody.appendChild(tr);
   }
 }
