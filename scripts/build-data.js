@@ -126,17 +126,29 @@ function normalizeBsd(event, prediction, leagueNames = new Map()) {
   const expected = first(pick(marketRoot, 'expected_goals', 'expectedGoals', 'xg', 'goalExpectancy'), {}) || {};
   const cards = first(pick(marketRoot, 'yellow_cards', 'yellowCards', 'cards', 'booking_points', 'totalCards'), {}) || {};
   const predicted = first(
-    pick(result, 'predicted', 'prediction', 'winner', 'outcome', 'recommended'),
+    pick(result, 'predicted', 'predicted_result', 'predictedResult', 'prediction', 'winner', 'outcome', 'recommended'),
     pick(sourcePrediction.recommendations || {}, 'favorite', 'predicted', 'winner'),
-    pick(sourcePrediction, 'predictedWinner', 'predicted', 'winner')
+    pick(sourcePrediction, 'predictedWinner', 'predicted_result', 'predictedResult', 'predicted', 'winner')
   );
-  const probHomeRaw = first(pick(result, 'prob_home', 'probHome', 'homeProbability', 'homeWinProbability', 'home'), deepPick(sourcePrediction, ['prob_home', 'probHome', 'homeWinProbability']));
-  const probDrawRaw = first(pick(result, 'prob_draw', 'probDraw', 'drawProbability', 'draw'), deepPick(sourcePrediction, ['prob_draw', 'probDraw', 'drawProbability']));
-  const probAwayRaw = first(pick(result, 'prob_away', 'probAway', 'awayProbability', 'awayWinProbability', 'away'), deepPick(sourcePrediction, ['prob_away', 'probAway', 'awayWinProbability']));
+  const probHomeRaw = first(
+    pick(result, 'prob_home', 'probHome', 'prob_home_win', 'probHomeWin', 'home_win_prob', 'homeWinProb', 'homeProbability', 'homeWinProbability', 'home'),
+    deepPick(sourcePrediction, ['prob_home', 'probHome', 'prob_home_win', 'probHomeWin', 'home_win_prob', 'homeWinProb', 'home_win_probability', 'homeWinProbability'])
+  );
+  const probDrawRaw = first(
+    pick(result, 'prob_draw', 'probDraw', 'draw_prob', 'drawProb', 'drawProbability', 'draw'),
+    deepPick(sourcePrediction, ['prob_draw', 'probDraw', 'draw_prob', 'drawProb', 'drawProbability'])
+  );
+  const probAwayRaw = first(
+    pick(result, 'prob_away', 'probAway', 'prob_away_win', 'probAwayWin', 'away_win_prob', 'awayWinProb', 'awayProbability', 'awayWinProbability', 'away'),
+    deepPick(sourcePrediction, ['prob_away', 'probAway', 'prob_away_win', 'probAwayWin', 'away_win_prob', 'awayWinProb', 'away_win_probability', 'awayWinProbability'])
+  );
   const probHome = percent(probHomeRaw);
   const probDraw = percent(probDrawRaw);
   const probAway = percent(probAwayRaw);
   const hasResultProbs = [probHomeRaw, probDrawRaw, probAwayRaw].some(value => value !== null && Number.isFinite(Number(value)));
+  const probabilityOutcome = hasResultProbs
+    ? `П1 ${probHome ?? '—'} / X ${probDraw ?? '—'} / П2 ${probAway ?? '—'}`
+    : '—';
   const outcome = predicted
     ? ({ home: 'П1', homewin: 'П1', '1': 'П1', draw: 'X', tie: 'X', away: 'П2', awaywin: 'П2', '2': 'П2' })[String(predicted).toLowerCase()] || String(predicted)
     : hasResultProbs
@@ -150,8 +162,8 @@ function normalizeBsd(event, prediction, leagueNames = new Map()) {
   const corner105 = pick(corners, 'prob_over_105', 'prob_over_10_5', 'over105Probability', 'over10_5');
   const card25 = pick(cards, 'prob_over_25', 'prob_over_2_5', 'over25Probability', 'over2_5');
   const card35 = pick(cards, 'prob_over_35', 'prob_over_3_5', 'over35Probability', 'over3_5');
-  const xgHome = first(pick(expected, 'home', 'homeXg', 'xgHome', 'homeExpectedGoals'), deepPick(sourcePrediction, ['homeXg', 'xgHome', 'homeExpectedGoals']));
-  const xgAway = first(pick(expected, 'away', 'awayXg', 'xgAway', 'awayExpectedGoals'), deepPick(sourcePrediction, ['awayXg', 'xgAway', 'awayExpectedGoals']));
+  const xgHome = first(pick(expected, 'home', 'homeXg', 'xgHome', 'homeExpectedGoals', 'expected_home_goals', 'expectedHomeGoals'), deepPick(sourcePrediction, ['homeXg', 'xgHome', 'homeExpectedGoals']));
+  const xgAway = first(pick(expected, 'away', 'awayXg', 'xgAway', 'awayExpectedGoals', 'expected_away_goals', 'expectedAwayGoals'), deepPick(sourcePrediction, ['awayXg', 'xgAway', 'awayExpectedGoals']));
   const eventDate = first(
     pick(sourceEvent, 'eventDate', 'startTime', 'kickoff', 'date', 'dateTime', 'matchDate', 'start'),
     pick(sourcePrediction, 'eventDate', 'startTime', 'kickoff', 'date', 'dateTime', 'matchDate', 'start')
@@ -181,6 +193,7 @@ function normalizeBsd(event, prediction, leagueNames = new Map()) {
     home: teamName(home),
     away: teamName(away),
     outcome,
+    probabilityOutcome,
     totalGoals: goalParts.join(' / ') || (xgHome !== null || xgAway !== null ? `xG ${xgHome ?? '—'}–${xgAway ?? '—'}` : '—'),
     individualTotals: xgHome !== null || xgAway !== null ? `Х ${xgHome ?? '—'} / Г ${xgAway ?? '—'} xG` : '—',
     corners: cornerParts.length ? `ТБ угл. ${cornerParts.join(' / ')}` : '—',
@@ -221,6 +234,9 @@ function normalizeSstats(game, glicko = null, leagueNames = new Map()) {
   const outcome = winner
     ? ({ home: 'П1', homewin: 'П1', '1': 'П1', draw: 'X', tie: 'X', away: 'П2', awaywin: 'П2', '2': 'П2' })[String(winner).toLowerCase()] || String(winner)
     : hasProbs ? `П1 ${percent(homeProb) ?? '—'} / X ${percent(drawProb) ?? '—'} / П2 ${percent(awayProb) ?? '—'}` : '—';
+  const probabilityOutcome = hasProbs
+    ? `П1 ${percent(homeProb) ?? '—'} / X ${percent(drawProb) ?? '—'} / П2 ${percent(awayProb) ?? '—'}`
+    : '—';
   const xgHome = first(
     deepPick(detail, ['homeXg', 'xgHome', 'homeExpectedGoals', 'expectedGoalsHome', 'homeXG', 'xGHome']),
     deepPick(game, ['homeXg', 'xgHome', 'homeExpectedGoals', 'expectedGoalsHome'])
@@ -261,6 +277,7 @@ function normalizeSstats(game, glicko = null, leagueNames = new Map()) {
     home: teamName(home),
     away: teamName(away),
     outcome,
+    probabilityOutcome,
     totalGoals: goalParts.join(' / ') || (xgHome !== null || xgAway !== null ? `xG сумма: ${(Number(xgHome || 0) + Number(xgAway || 0)).toFixed(2)}` : '—'),
     individualTotals: xgHome !== null || xgAway !== null ? `Х ${xgHome ?? '—'} / Г ${xgAway ?? '—'} xG` : '—',
     corners: cornerParts.length ? `ТБ угл. ${cornerParts.join(' / ')}` : '—',
@@ -449,6 +466,17 @@ async function buildData() {
   sourceStatus.bsd = { ok: false, count: 0, message: '', diagnostic: '' };
   sourceStatus.sstats = { ok: false, count: 0, message: '', diagnostic: '' };
   const [bsd, sstats] = await Promise.all([runSource('bsd', fetchBSD), runSource('sstats', fetchSStats)]);
+  const teamKey = value => String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const bsdProbabilities = new Map();
+  for (const row of bsd) {
+    if (row.probabilityOutcome && row.probabilityOutcome !== '—') {
+      bsdProbabilities.set(`${teamKey(row.home)}|${teamKey(row.away)}`, row.probabilityOutcome);
+    }
+  }
+  for (const row of sstats) {
+    const bsdProbability = bsdProbabilities.get(`${teamKey(row.home)}|${teamKey(row.away)}`);
+    if (bsdProbability) row.probabilityOutcome = bsdProbability;
+  }
   const predictions = [...bsd, ...sstats]
     .filter(row => row.time && dateKey(row.time) === date)
     .sort((a, b) => new Date(a.time) - new Date(b.time));
