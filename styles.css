@@ -139,7 +139,7 @@ table {
 }
 
 /* Column proportions tuned for a desktop viewport around 1920px wide. */
-th:nth-child(1), td:nth-child(1) { width: 5%; }
+th:nth-child(1), td:nth-child(1) { width: 9%; }
 th:nth-child(2), td:nth-child(2) { width: 12%; }
 th:nth-child(3), td:nth-child(3) { width: 10%; }
 th:nth-child(4), td:nth-child(4) { width: 10%; }
