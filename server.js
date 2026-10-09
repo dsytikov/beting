@@ -80,7 +80,7 @@ const server = http.createServer(async (request, response) => {
       return sendJson(response, 200, result);
     }
     if (Date.now() - lastRefreshStarted < 30_000) {
-      return sendJson(response, 429, { ok: false, message: 'Подождите 30 секунд перед следующим обновлением.' });
+      return sendJson(response, 200, { ok: true, skipped: true, message: 'Обновление недавно выполнялось; показываем последние данные.' });
     }
     const result = await runBuilder();
     return sendJson(response, 200, result);
