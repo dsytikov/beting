@@ -209,11 +209,24 @@ async function fetchBSD() {
 async function fetchSStats() {
   const token = process.env.SSTATS_TOKEN || '';
   if (!token) throw new Error('Не задан SSTATS_TOKEN в Environment Variables Vercel');
-  // Request only the target day. Fetching an entire year can be slow or time out.
-  // SStats documents From/To filters for Games/list.
-  const params = new URLSearchParams({ from: date, to: date, limit: '200', order: '-1', apikey: token });
-  const payload = await getJson(`${SSTATS_BASE}/games/list?${params}`);
+  // SStats documents Date as a direct Games/list filter. Use its documented
+  // casing and request one day instead of a broad year-wide query.
+  const params = new URLSearchParams({ Date: date, Limit: '200', Offset: '0', apikey: token });
+  const [gamesResult, leaguesResult] = await Promise.allSettled([
+    getJson(`${SSTATS_BASE}/games/list?${params}`, {}, 7000),
+    getJson(`${SSTATS_BASE}/leagues`, {}, 3500)
+  ]);
+  if (gamesResult.status === 'rejected') throw gamesResult.reason;
+  const payload = gamesResult.value;
   const games = arr(payload);
+  const leaguesPayload = leaguesResult.status === 'fulfilled' ? leaguesResult.value : null;
+  const leagueRows = arr(leaguesPayload);
+  const leagueNames = new Map();
+  for (const league of leagueRows) {
+    const id = first(league.Id, league.id, league.LeagueId, league.leagueId);
+    const name = first(league.Name, league.name, league.LeagueName, league.leagueName, league.Title, league.title);
+    if (id !== null && name !== null) leagueNames.set(String(id), name);
+  }
   return games.filter(game => {
     const raw = first(
       game.Date, game.date, game.DateTime, game.dateTime, game.eventDate, game.event_date,
@@ -222,7 +235,14 @@ async function fetchSStats() {
       game.start, game.timestamp, game.date_start, game.DateStart
     );
     return dateKey(raw) === date;
-  }).map(normalizeSstats);
+  }).map(game => {
+    const leagueId = first(game.LeagueId, game.leagueId, game.LeagueID);
+    const normalized = normalizeSstats(game);
+    if (normalized.league === '—' && leagueId !== null && leagueNames.has(String(leagueId))) {
+      normalized.league = leagueNames.get(String(leagueId));
+    }
+    return normalized;
+  });
 }
 async function runSource(name, fn) {
   try {
