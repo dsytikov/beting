@@ -71,6 +71,14 @@ async function main() {
   assert.match(bsdRow.corners, /9.5: 52.0%/);
   assert.match(bsdRow.yellowCards, /3.5: 44.0%/);
 
+  const leagueIdRow = normalizeBsd(
+    { id: 43, event_date: '2026-10-09T18:00:00Z', league: { id: 50 }, home_team: 'Home FC', away_team: 'Away FC' },
+    { event: { id: 43 }, markets: { match_result: { predicted: 'away' } } },
+    new Map([['50', 'Mapped League']])
+  );
+  assert.equal(leagueIdRow.league, 'Mapped League');
+  assert.equal(leagueIdRow.outcome, 'П2');
+
   const sstatsRow = normalizeSstats(
     { Id: 1183255, Date: '2026-10-09T19:00:00Z', LeagueId: 7, HomeTeamName: 'Alpha', AwayTeamName: 'Beta' },
     { data: { homeWinProbability: 0.51, drawProbability: 0.25, awayWinProbability: 0.24, homeXg: 1.7, awayXg: 1.2 } },
