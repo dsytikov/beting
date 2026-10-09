@@ -49,11 +49,12 @@ function teamName(value) {
   return first(value, '—');
 }
 function normalizeBsd(event, prediction) {
-  const markets = prediction?.markets || {};
-  const result = markets.match_result || {};
-  const ou = markets.over_under || {};
-  const corners = markets.corners || {};
-  const expected = markets.expected_goals || {};
+  // Accept both the documented "markets" shape and legacy/provider variants.
+  const markets = prediction?.markets || prediction?.predictions || {};
+  const result = markets.match_result || markets.matchResult || markets.result || {};
+  const ou = markets.over_under || markets.total_goals || markets.totalGoals || {};
+  const corners = markets.corners || markets.total_corners || {};
+  const expected = markets.expected_goals || markets.expectedGoals || {};
   const predicted = first(result.predicted, prediction?.recommendations?.favorite);
   const outcome = predicted
     ? ({ home: 'П1', draw: 'X', away: 'П2' })[String(predicted).toLowerCase()] || String(predicted)
@@ -122,15 +123,38 @@ async function fetchBSD() {
   const events = eventsResult.status === 'fulfilled' ? arr(eventsResult.value) : [];
   const predictions = predictionsResult.status === 'fulfilled' ? arr(predictionsResult.value) : [];
   const predictionByEvent = new Map();
+  const predictionByTeams = new Map();
+  const nameKey = value => String(teamName(value) || '')
+    .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
+    .toLocaleLowerCase('en').replace(/[^a-z0-9]+/g, ' ').trim();
+  const eventTeamsKey = event => {
+    const home = first(event.home_team, event.home, event.HomeTeam, event.event?.home_team);
+    const away = first(event.away_team, event.away, event.AwayTeam, event.event?.away_team);
+    return home && away ? `${nameKey(home)}| ${nameKey(away)}` : null;
+  };
   for (const prediction of predictions) {
     const eventId = first(prediction.event_id, prediction.event?.id, prediction.match_id, prediction.match?.id);
     if (eventId !== null) predictionByEvent.set(String(eventId), prediction);
+    const nestedEvent = prediction.event || prediction.match || prediction;
+    const teamsKey = eventTeamsKey(nestedEvent);
+    if (teamsKey) predictionByTeams.set(teamsKey, prediction);
   }
 
   if (events.length) {
-    const rows = events.map(event => normalizeBsd(event, predictionByEvent.get(String(event.id)) || null));
+    let matched = 0;
+    const rows = events.map(event => {
+      const byId = predictionByEvent.get(String(event.id));
+      const byTeams = predictionByTeams.get(eventTeamsKey(event));
+      const prediction = byId || byTeams || null;
+      if (prediction) matched += 1;
+      return normalizeBsd(event, prediction);
+    });
     if (predictionsResult.status === 'rejected') {
       sourceStatus.bsd.message = `Расписание получено, прогнозы BSD недоступны: ${safeError(predictionsResult.reason)}`;
+    } else if (predictions.length && matched === 0) {
+      sourceStatus.bsd.message = `Получено ${events.length} матчей и ${predictions.length} прогнозов BSD, но не удалось сопоставить их по ID или названиям команд`;
+    } else if (predictionsResult.status === 'fulfilled') {
+      sourceStatus.bsd.message = `Прогнозы BSD сопоставлены: ${matched} из ${events.length} матчей`;
     }
     return rows;
   }
