@@ -419,7 +419,7 @@ async function fetchSStats() {
     return normalizeSstats(game, detail, leagueNames);
   });
   const enriched = glickoPairs.filter(([, value]) => value !== null).length;
-  sourceStatus.sstats.diagnostic = `SStats: получено ${todayGames.length} матчей, Glicko/xG доступны для ${enriched}`;
+  sourceStatus.sstats.diagnostic = `${sourceStatus.sstats.diagnostic ? sourceStatus.sstats.diagnostic + '; ' : ''}SStats: получено ${todayGames.length} матчей, Glicko/xG доступны для ${enriched}`;
   return rows;
 }
 async function runSource(name, fn) {
