@@ -13,7 +13,7 @@ const sourceStatus = {
 
 function arr(payload) {
   if (Array.isArray(payload)) return payload;
-  for (const key of ['results', 'data', 'items', 'games', 'events']) {
+  for (const key of ['results', 'data', 'items', 'games', 'events', 'predictions', 'matches']) {
     if (Array.isArray(payload?.[key])) return payload[key];
   }
   if (payload?.data && typeof payload.data === 'object') return arr(payload.data);
@@ -24,8 +24,7 @@ function first(...values) {
 }
 function percent(value) {
   if (value === undefined || value === null || !Number.isFinite(Number(value))) return null;
-  const n = Number(value);
-  return `${n.toFixed(1)}%`;
+  return `${Number(value).toFixed(1)}%`;
 }
 function safeError(error) {
   return String(error?.message || error).replace(/https?:\/\/\S+/g, '[API URL]').slice(0, 220);
@@ -45,33 +44,39 @@ async function getJson(url, headers = {}) {
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${body.slice(0, 160)}`);
   try { return JSON.parse(body); } catch { throw new Error('API вернул не JSON'); }
 }
-function normalizeBsd(prediction) {
-  const event = prediction.event || prediction.match || {};
-  const markets = prediction.markets || prediction.predictions || {};
-  const result = markets.match_result || markets.matchResult || {};
-  const ou = markets.over_under || markets.total_goals || {};
+function teamName(value) {
+  if (value && typeof value === 'object') return first(value.name, value.Name, value.title, value.short_name, '—');
+  return first(value, '—');
+}
+function normalizeBsd(event, prediction) {
+  const markets = prediction?.markets || {};
+  const result = markets.match_result || {};
+  const ou = markets.over_under || {};
   const corners = markets.corners || {};
   const expected = markets.expected_goals || {};
-  const predicted = first(result.predicted, prediction.predicted, prediction.recommendations?.favorite);
+  const predicted = first(result.predicted, prediction?.recommendations?.favorite);
   const outcome = predicted
-    ? `${({ home: 'П1', draw: 'X', away: 'П2' })[String(predicted).toLowerCase()] || predicted}`
+    ? ({ home: 'П1', draw: 'X', away: 'П2' })[String(predicted).toLowerCase()] || String(predicted)
     : first(result.prob_home, result.prob_draw, result.prob_away) !== null
       ? `П1 ${percent(result.prob_home)} / X ${percent(result.prob_draw)} / П2 ${percent(result.prob_away)}`
       : '—';
-  const goalsLine = first(ou.prob_over_25, ou.prob_over_2_5);
-  const totalGoals = goalsLine !== null ? `ТБ 2.5: ${percent(goalsLine)}`
-    : first(expected.home, expected.away) !== null ? `xG ${expected.home ?? '—'}–${expected.away ?? '—'}` : '—';
-  const cornerLine = first(corners.prob_over_95, corners.prob_over_9_5, corners.prob_over_85);
+  const over25 = first(ou.prob_over_25, ou.prob_over_2_5);
+  const corner95 = first(corners.prob_over_95, corners.prob_over_9_5);
+  const corner85 = first(corners.prob_over_85, corners.prob_over_8_5);
+  const cornerValue = first(corner95, corner85);
+  const eventDate = first(event.event_date, event.start_time, event.kickoff, event.date);
   return {
     source: 'BSD',
-    time: first(event.event_date, event.start_time, event.kickoff, prediction.event_date, prediction.start_time, event.date),
-    league: first(event.league?.name, event.competition?.name, event.league_name, '—'),
-    home: first(event.home_team?.name, event.home_team, event.home, '—'),
-    away: first(event.away_team?.name, event.away_team, event.away, '—'),
+    eventId: first(event.id, prediction?.event_id, prediction?.event?.id),
+    time: eventDate,
+    league: first(event.league?.name, event.competition?.name, event.league_name, event.league, '—') && teamName(first(event.league?.name, event.competition?.name, event.league_name, event.league, '—')),
+    home: teamName(first(event.home_team, event.home, event.HomeTeam, '—')),
+    away: teamName(first(event.away_team, event.away, event.AwayTeam, '—')),
     outcome,
-    totalGoals,
+    totalGoals: over25 !== null ? `ТБ 2.5: ${percent(over25)}`
+      : first(expected.home, expected.away) !== null ? `xG ${expected.home ?? '—'}–${expected.away ?? '—'}` : '—',
     individualTotals: first(expected.home, expected.away) !== null ? `Х ${expected.home ?? '—'} / Г ${expected.away ?? '—'} xG` : '—',
-    corners: cornerLine !== null ? `ТБ угл. ${corners.prob_over_95 !== undefined ? '9.5' : '8.5'}: ${percent(cornerLine)}` : '—',
+    corners: cornerValue !== null ? `ТБ угл. ${corner95 !== null ? '9.5' : '8.5'}: ${percent(cornerValue)}` : '—',
     yellowCards: '—'
   };
 }
@@ -81,16 +86,18 @@ function normalizeSstats(game) {
   const dateTime = first(
     game.Date, game.date, game.DateTime, game.dateTime, game.eventDate, game.event_date,
     game.StartTime, game.startTime, game.start_time, game.Kickoff, game.kickoff,
-    game.MatchDate, game.matchDate, game.match_date
+    game.MatchDate, game.matchDate, game.match_date, game.gameDate, game.GameDate,
+    game.start, game.timestamp, game.date_start, game.DateStart
   );
   const home = first(game.HomeTeamName, game.homeTeamName, game.homeTeam?.name, game.homeTeam, game.home, game.HomeTeam);
   const away = first(game.AwayTeamName, game.awayTeamName, game.awayTeam?.name, game.awayTeam, game.away, game.AwayTeam);
   return {
     source: 'SStats',
+    eventId: first(game.Id, game.id, game.GameId, game.gameId),
     time: dateTime,
-    league: first(game.LeagueName, game.leagueName, game.league?.name, game.league, game.League, '—'),
-    home: typeof home === 'object' ? first(home.name, home.Name, home.title, '—') : first(home, '—'),
-    away: typeof away === 'object' ? first(away.name, away.Name, away.title, '—') : first(away, '—'),
+    league: first(game.LeagueName, game.leagueName, game.league?.name, game.league, game.League, '—') && teamName(first(game.LeagueName, game.leagueName, game.league?.name, game.league, game.League, '—')),
+    home: teamName(home),
+    away: teamName(away),
     outcome: first(markets.match_result?.predicted, markets.matchResult, game.predictedWinner, game.PredictedWinner, '—'),
     totalGoals: first(markets.over_under?.prediction, markets.totalGoals, game.TotalGoals, '—'),
     individualTotals: '—',
@@ -102,40 +109,50 @@ async function fetchBSD() {
   const token = process.env.BSD_TOKEN || '';
   if (!token) throw new Error('Не задан BSD_TOKEN в Environment Variables Vercel');
   const headers = { Authorization: `Token ${token}`, Accept: 'application/json' };
-  const params = new URLSearchParams({ date_from: date, date_to: date, limit: '200' });
-  const predictionsPayload = await getJson(`${BSD_BASE}/predictions/?${params}`, headers);
-  const predictions = arr(predictionsPayload);
-  if (predictions.length) return predictions.map(normalizeBsd);
-  const eventsPayload = await getJson(`${BSD_BASE}/events/?${params}`, headers);
-  return arr(eventsPayload).map(event => ({
-    source: 'BSD',
-    time: first(event.event_date, event.start_time, event.date),
-    league: first(event.league?.name, event.competition?.name, event.league_name, '—'),
-    home: typeof first(event.home_team, event.home, event.HomeTeam) === 'object'
-      ? first(event.home_team?.name, event.home?.name, event.HomeTeam?.name, '—')
-      : first(event.home_team, event.home, event.HomeTeam, '—'),
-    away: typeof first(event.away_team, event.away, event.AwayTeam) === 'object'
-      ? first(event.away_team?.name, event.away?.name, event.AwayTeam?.name, '—')
-      : first(event.away_team, event.away, event.AwayTeam, '—'),
-    outcome: '—', totalGoals: '—', individualTotals: '—', corners: '—', yellowCards: '—'
-  }));
+  const params = new URLSearchParams({ date_from: date, date_to: date, limit: '200', offset: '0' });
+
+  const [eventsResult, predictionsResult] = await Promise.allSettled([
+    getJson(`${BSD_BASE}/events/?${params}`, headers),
+    getJson(`${BSD_BASE}/predictions/?${params}`, headers)
+  ]);
+  if (eventsResult.status === 'rejected' && predictionsResult.status === 'rejected') {
+    throw new Error(`events: ${safeError(eventsResult.reason)}; predictions: ${safeError(predictionsResult.reason)}`);
+  }
+
+  const events = eventsResult.status === 'fulfilled' ? arr(eventsResult.value) : [];
+  const predictions = predictionsResult.status === 'fulfilled' ? arr(predictionsResult.value) : [];
+  const predictionByEvent = new Map();
+  for (const prediction of predictions) {
+    const eventId = first(prediction.event_id, prediction.event?.id, prediction.match_id, prediction.match?.id);
+    if (eventId !== null) predictionByEvent.set(String(eventId), prediction);
+  }
+
+  if (events.length) {
+    const rows = events.map(event => normalizeBsd(event, predictionByEvent.get(String(event.id)) || null));
+    if (predictionsResult.status === 'rejected') {
+      sourceStatus.bsd.message = `Расписание получено, прогнозы BSD недоступны: ${safeError(predictionsResult.reason)}`;
+    }
+    return rows;
+  }
+
+  return predictions.map(prediction => {
+    const event = prediction.event || prediction.match || prediction;
+    return normalizeBsd(event, prediction);
+  });
 }
 async function fetchSStats() {
   const token = process.env.SSTATS_TOKEN || '';
   if (!token) throw new Error('Не задан SSTATS_TOKEN в Environment Variables Vercel');
-  const params = new URLSearchParams({
-    From: date,
-    To: date,
-    Year: date.slice(0, 4),
-    Limit: '200',
-    apikey: token
-  });
+  // SStats documents Year as a supported Games/list filter; filter the exact day locally.
+  const params = new URLSearchParams({ Year: date.slice(0, 4), Limit: '200', apikey: token });
   const payload = await getJson(`${SSTATS_BASE}/games/list?${params}`);
-  return arr(payload).filter(game => {
+  const games = arr(payload);
+  return games.filter(game => {
     const raw = first(
       game.Date, game.date, game.DateTime, game.dateTime, game.eventDate, game.event_date,
       game.StartTime, game.startTime, game.start_time, game.Kickoff, game.kickoff,
-      game.MatchDate, game.matchDate, game.match_date
+      game.MatchDate, game.matchDate, game.match_date, game.gameDate, game.GameDate,
+      game.start, game.timestamp, game.date_start, game.DateStart
     );
     return dateKey(raw) === date;
   }).map(normalizeSstats);
@@ -143,7 +160,14 @@ async function fetchSStats() {
 async function runSource(name, fn) {
   try {
     const rows = await fn();
-    sourceStatus[name] = { ok: true, count: rows.length, message: '' };
+    const priorMessage = sourceStatus[name].message;
+    sourceStatus[name] = {
+      ok: true,
+      count: rows.length,
+      message: priorMessage || (rows.length ? '' : `API ответил, но матчи за ${date} не найдены или формат ответа не распознан`)
+    };
+    if (!rows.length) errors.push(`${name === 'bsd' ? 'BSD' : 'SStats'}: ${sourceStatus[name].message}`);
+    else if (priorMessage) errors.push(`${name === 'bsd' ? 'BSD' : 'SStats'}: ${priorMessage}`);
     return rows;
   } catch (error) {
     const message = safeError(error);
