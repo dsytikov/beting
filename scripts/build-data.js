@@ -436,47 +436,44 @@ async function fetchSStats() {
   const token = process.env.SSTATS_TOKEN || '';
   if (!token) throw new Error('Не задан SSTATS_TOKEN в Environment Variables Vercel');
   const apiKey = `apikey=${encodeURIComponent(token)}`;
-  // Date filters can return HTTP 200 with no rows. Try several documented date
-  // formats, then retain diagnostics about the actual response shape for debugging.
-  let gamesPayload;
-  let firstError;
-  const attempts = [];
-  const requestGames = async (label, query) => {
+  // Run several lightweight list queries in parallel: the Date filter can hang,
+  // while From/To may return a valid envelope with count=0. Prefer exact-date rows.
+  const querySpecs = [
+    { label: 'Date', query: { Date: date } },
+    { label: 'Today', query: { Today: 'true' } },
+    { label: 'From/To', query: { From: date, To: date } },
+    { label: 'Default list', query: {} }
+  ];
+  const attempts = await Promise.all(querySpecs.map(async spec => {
     try {
-      const queryParams = new URLSearchParams({ ...query, Limit: '200', Offset: '0', apikey: token });
-      const payload = await getJson(SSTATS_BASE + '/games/list?' + queryParams.toString(), {}, 4300);
+      const queryParams = new URLSearchParams({ ...spec.query, Limit: '200', Offset: '0', apikey: token });
+      const payload = await getJson(SSTATS_BASE + '/games/list?' + queryParams.toString(), {}, 3200);
       const rows = arr(payload);
       const matching = rows.filter(game => {
         const raw = pick(game, 'Date', 'DateTime', 'eventDate', 'StartTime', 'Kickoff', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start');
         return !raw || dateKey(raw) === date;
       });
-      attempts.push({ label, count: rows.length, matching: matching.length, keys: payload && typeof payload === 'object' && !Array.isArray(payload) ? Object.keys(payload).slice(0, 12) : [] });
-      return { payload, rows, matching };
+      const envelope = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+      return {
+        label: spec.label,
+        payload,
+        rows,
+        matching,
+        count: first(pick(envelope, 'count', 'totalCount', 'TotalCount'), rows.length),
+        keys: Object.keys(envelope).slice(0, 12)
+      };
     } catch (error) {
-      attempts.push({ label, error: safeError(error) });
-      if (!firstError) firstError = error;
-      return null;
+      return { label: spec.label, error: safeError(error), rows: [], matching: [] };
     }
-  };
+  }));
 
-  let result = await requestGames('Date', { Date: date });
-  if (result && result.matching.length) {
-    gamesPayload = result.payload;
-  } else {
-    result = await requestGames('From/To date', { From: date, To: date });
-    if (result && result.matching.length) {
-      gamesPayload = result.payload;
-    } else {
-      result = await requestGames('From/To datetime', { From: date + 'T00:00:00', To: date + 'T23:59:59' });
-      if (result && result.matching.length) gamesPayload = result.payload;
-      else if (result && result.rows.length) gamesPayload = result.payload;
-      else if (result && result.payload) gamesPayload = result.payload;
-    }
-  }
-
+  const chosen = attempts.find(item => item.matching && item.matching.length)
+    || attempts.find(item => item.rows && item.rows.length)
+    || attempts.find(item => item.payload);
+  gamesPayload = chosen ? chosen.payload : null;
   const attemptSummary = attempts.map(item => item.error
-    ? item.label + ': ошибка ' + item.error
-    : item.label + ': строк ' + item.count + ', совпало по дате ' + item.matching + ', ключи ' + (item.keys.join(',') || 'массив/не объект')).join('; ');
+    ? item.label + ': timeout/ошибка ' + item.error
+    : item.label + ': count=' + item.count + ', строк=' + item.rows.length + ', совпало по дате=' + item.matching.length + ', ключи=' + (item.keys.join(',') || 'массив/не объект')).join('; ');
   sourceStatus.sstats.diagnostic = 'SStats: ' + attemptSummary;
   const games = arr(gamesPayload);
   let leaguesPayload = null;
@@ -506,7 +503,7 @@ async function fetchSStats() {
   }
   // Glicko/xG is a separate documented endpoint, not part of /games/list.
   // Query it concurrently so the table gets actual model fields instead of empty placeholders.
-  const glickoTargets = firstError ? [] : todayGames.slice(0, 10); // Skip optional enrichment after a slow fallback, preserving time for the data response.
+  const glickoTargets = todayGames.slice(0, 10);
   const glickoPairs = await Promise.all(glickoTargets.map(async game => {
     const id = pick(game, 'Id', 'GameId', 'gameId', 'id');
     if (id === null) return [String(id), null];
