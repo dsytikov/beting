@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-09",
+  "generatedAt": "2026-10-09T16:43:04.023Z",
+  "sources": {
+    "bsd": {
+      "ok": false,
+      "count": 0,
+      "message": "Ожидание первого запуска GitHub Actions"
+    },
+    "sstats": {
+      "ok": false,
+      "count": 0,
+      "message": "Ожидание первого запуска GitHub Actions"
+    }
+  },
+  "errors": [
+    "Данные ещё не загружены. Запустите workflow GitHub Actions."
+  ],
+  "predictions": []
+}
