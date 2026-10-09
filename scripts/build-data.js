@@ -121,16 +121,22 @@ async function runSource(name, fn) {
     return [];
   }
 }
-async function main() {
+async function buildData() {
   const [bsd, sstats] = await Promise.all([runSource('bsd', fetchBSD), runSource('sstats', fetchSStats)]);
   const predictions = [...bsd, ...sstats]
     .filter(row => row.time && String(row.time).slice(0, 10) === date)
     .sort((a, b) => new Date(a.time) - new Date(b.time));
-  const output = { date, generatedAt: new Date().toISOString(), sources: sourceStatus, errors, predictions };
-  fs.writeFileSync('data.json', JSON.stringify(output, null, 2) + '\n');
-  console.log(`Generated data.json: ${predictions.length} rows; BSD=${bsd.length}; SStats=${sstats.length}`);
-  if (!sourceStatus.bsd.ok && !sourceStatus.sstats.ok) {
-    console.warn('Both data sources failed; published JSON contains diagnostic errors.');
-  }
+  return { date, generatedAt: new Date().toISOString(), sources: sourceStatus, errors, predictions };
 }
-main().catch(error => { console.error(error); process.exitCode = 1; });
+
+if (require.main === module) {
+  buildData().then(output => {
+    fs.writeFileSync('data.json', JSON.stringify(output, null, 2) + '\n');
+    console.log(`Generated data.json: ${output.predictions.length} rows; BSD=${output.sources.bsd.count}; SStats=${output.sources.sstats.count}`);
+    if (!output.sources.bsd.ok && !output.sources.sstats.ok) {
+      console.warn('Both data sources failed; generated JSON contains diagnostic errors.');
+    }
+  }).catch(error => { console.error(error); process.exitCode = 1; });
+}
+
+module.exports = { buildData };
