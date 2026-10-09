@@ -54,7 +54,7 @@ function deepPick(obj, keys, depth = 0) {
 function percent(value) {
   if (value === undefined || value === null || !Number.isFinite(Number(value))) return null;
   let number = Number(value);
-  if (number > 0 && number <= 1) number *= 100;
+  if (number > 0 && number < 1) number *= 100;
   return `${number.toFixed(1)}%`;
 }
 function safeError(error) {
@@ -99,12 +99,14 @@ function leagueNameFor(item, leagueNames = new Map()) {
   const id = first(
     pick(item, 'leagueId', 'competitionId', 'tournamentId', 'divisionId'),
     pick(item?.league, 'id', 'leagueId'),
-    pick(item?.event, 'leagueId', 'competitionId', 'tournamentId')
+    pick(item?.event, 'leagueId', 'competitionId', 'tournamentId'),
+    raw !== null && typeof raw !== 'object' && /^\\d+$/.test(String(raw)) ? raw : null
   );
   return id !== null && leagueNames.has(String(id)) ? leagueNames.get(String(id)) : (id !== null ? String(id) : '—');
 }
 function normalizeBsd(event, prediction, leagueNames = new Map()) {
-  const sourceEvent = first(prediction?.event, prediction?.match, prediction?.fixture, event) || event;
+  const nestedEvent = first(prediction?.event, prediction?.match, prediction?.fixture, {}) || {};
+  const sourceEvent = { ...(event && typeof event === 'object' ? event : {}), ...(nestedEvent && typeof nestedEvent === 'object' ? nestedEvent : {}) };
   const sourcePrediction = prediction || {};
   const marketRoot = first(sourcePrediction.markets, sourcePrediction.Markets, sourcePrediction.predictions, sourcePrediction.Predictions, sourcePrediction.data?.markets, sourcePrediction.data?.predictions, {}) || {};
   const result = first(pick(marketRoot, 'match_result', 'matchResult', 'result', '1x2', 'matchWinner'), {}) || {};
