@@ -66,6 +66,7 @@ async function main() {
   assert.equal(bsdRow.away, 'Away FC');
   assert.equal(bsdRow.source, 'BSD');
   assert.equal(bsdRow.outcome, 'П1');
+  assert.equal(bsdRow.probabilityOutcome, 'П1 48.0% / X 27.0% / П2 25.0%');
   assert.match(bsdRow.totalGoals, /ТБ 2.5: 61.0%/);
   assert.match(bsdRow.individualTotals, /1.6/);
   assert.match(bsdRow.corners, /9.5: 52.0%/);
@@ -89,6 +90,7 @@ async function main() {
   assert.equal(sstatsRow.away, 'Beta');
   assert.equal(sstatsRow.source, 'SStats');
   assert.match(sstatsRow.outcome, /51.0%/);
+  assert.equal(sstatsRow.probabilityOutcome, 'П1 51.0% / X 25.0% / П2 24.0%');
   assert.match(sstatsRow.individualTotals, /1.7/);
   assert.match(sstatsRow.totalGoals, /ТБ 2.5 Poisson:/);
 
