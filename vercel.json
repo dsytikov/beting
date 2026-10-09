@@ -4,7 +4,7 @@
   "cleanUrls": false,
   "functions": {
     "api/*.js": {
-      "maxDuration": 10
+      "maxDuration": 15
     }
   }
 }
