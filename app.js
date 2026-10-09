@@ -1,6 +1,7 @@
 /* Football predictions UI. Vercel serves this static UI and the Node.js /api/data function. */
 const $ = (id) => document.getElementById(id);
 let allPredictions = [];
+let activeSource = 'all';
 let sortKey = 'maxProbability';
 let sortAscending = false;
 const MIN_DISPLAY_PROBABILITY = 80;
@@ -89,9 +90,11 @@ function renderTable() {
   tbody.replaceChildren();
   const qualified = allPredictions
     .map(preparePrediction)
-    .filter((item) => item.maxProbability >= MIN_DISPLAY_PROBABILITY);
+    .filter((item) => item.maxProbability >= MIN_DISPLAY_PROBABILITY)
+    .filter((item) => activeSource === 'all' || item.source === activeSource);
   const rows = sortPredictions(qualified);
-  $('empty-state').textContent = 'Нет матчей с вероятностью 80% или выше.';
+  const sourceLabel = activeSource === 'BSD' ? 'BSD' : activeSource === 'SStats' ? 'S-Stats' : '';
+  $('empty-state').textContent = `Нет матчей${sourceLabel ? ` из источника ${sourceLabel}` : ''} с вероятностью 80% или выше.`;
   $('empty-state').classList.toggle('hidden', rows.length > 0);
   for (const item of rows) {
     const tr = document.createElement('tr');
@@ -167,6 +170,17 @@ async function loadAll(requestRefresh = false) {
 }
 document.addEventListener('DOMContentLoaded', () => {
   $('refresh-btn').addEventListener('click', () => loadAll(true));
+  document.querySelectorAll('.source-filter-btn').forEach((button) => {
+    button.addEventListener('click', () => {
+      activeSource = button.dataset.source || 'all';
+      document.querySelectorAll('.source-filter-btn').forEach((item) => {
+        const active = item === button;
+        item.classList.toggle('active', active);
+        item.setAttribute('aria-pressed', String(active));
+      });
+      renderTable();
+    });
+  });
   document.querySelectorAll('th[data-sort]').forEach((th) => {
     th.addEventListener('click', () => {
       const key = th.dataset.sort;
