@@ -11,20 +11,51 @@ const sourceStatus = {
   sstats: { ok: false, count: 0, message: '' }
 };
 
-function arr(payload) {
+function arr(payload, depth = 0) {
   if (Array.isArray(payload)) return payload;
-  for (const key of ['results', 'data', 'items', 'games', 'events', 'predictions', 'matches']) {
-    if (Array.isArray(payload?.[key])) return payload[key];
+  if (!payload || typeof payload !== 'object' || depth > 4) return [];
+  for (const key of ['results', 'Results', 'data', 'Data', 'items', 'Items', 'games', 'Games', 'events', 'Events', 'predictions', 'Predictions', 'matches', 'Matches', 'records', 'value']) {
+    if (Array.isArray(payload[key])) return payload[key];
   }
-  if (payload?.data && typeof payload.data === 'object') return arr(payload.data);
+  for (const key of ['data', 'Data', 'result', 'Result', 'response', 'Response']) {
+    if (payload[key] && typeof payload[key] === 'object') {
+      const nested = arr(payload[key], depth + 1);
+      if (nested.length) return nested;
+    }
+  }
   return [];
 }
 function first(...values) {
   return values.find(v => v !== undefined && v !== null && v !== '') ?? null;
 }
+function keyNorm(value) {
+  return String(value).replace(/[^a-z0-9]/gi, '').toLowerCase();
+}
+function pick(obj, ...keys) {
+  if (!obj || typeof obj !== 'object') return null;
+  const wanted = new Set(keys.map(keyNorm));
+  for (const [key, value] of Object.entries(obj)) {
+    if (wanted.has(keyNorm(key)) && value !== undefined && value !== null && value !== '') return value;
+  }
+  return null;
+}
+function deepPick(obj, keys, depth = 0) {
+  if (!obj || typeof obj !== 'object' || depth > 5) return null;
+  const direct = pick(obj, ...keys);
+  if (direct !== null) return direct;
+  for (const value of Object.values(obj)) {
+    if (value && typeof value === 'object') {
+      const found = deepPick(value, keys, depth + 1);
+      if (found !== null) return found;
+    }
+  }
+  return null;
+}
 function percent(value) {
   if (value === undefined || value === null || !Number.isFinite(Number(value))) return null;
-  return `${Number(value).toFixed(1)}%`;
+  let number = Number(value);
+  if (number > 0 && number <= 1) number *= 100;
+  return `${number.toFixed(1)}%`;
 }
 function safeError(error) {
   return String(error?.message || error).replace(/https?:\/\/\S+/g, '[API URL]').slice(0, 220);
@@ -45,80 +76,173 @@ async function getJson(url, headers = {}, timeoutMs = 5000) {
   try { return JSON.parse(body); } catch { throw new Error('API вернул не JSON'); }
 }
 function teamName(value) {
-  if (value && typeof value === 'object') return first(value.name, value.Name, value.title, value.short_name, '—');
+  if (value && typeof value === 'object') return first(
+    pick(value, 'name', 'teamName', 'displayName', 'title', 'shortName', 'short_name', 'label', 'value'),
+    '—'
+  );
   return first(value, '—');
 }
-function normalizeBsd(event, prediction) {
-  // Accept both the documented "markets" shape and legacy/provider variants.
-  const markets = prediction?.markets || prediction?.predictions || {};
-  const result = markets.match_result || markets.matchResult || markets.result || {};
-  const ou = markets.over_under || markets.total_goals || markets.totalGoals || {};
-  const corners = markets.corners || markets.total_corners || {};
-  const expected = markets.expected_goals || markets.expectedGoals || {};
-  const predicted = first(result.predicted, prediction?.recommendations?.favorite);
-  const probHome = percent(result.prob_home);
-  const probDraw = percent(result.prob_draw);
-  const probAway = percent(result.prob_away);
-  const hasResultProbs = [result.prob_home, result.prob_draw, result.prob_away]
-    .some(value => value !== undefined && value !== null && Number.isFinite(Number(value)));
+function leagueNameFor(item, leagueNames = new Map()) {
+  const raw = first(
+    pick(item, 'leagueName', 'competitionName', 'tournamentName', 'divisionName', 'league', 'competition', 'tournament', 'division'),
+    pick(item?.event, 'leagueName', 'competitionName', 'tournamentName', 'league', 'competition', 'tournament'),
+    pick(item?.league, 'name', 'Name', 'title', 'Title')
+  );
+  if (raw && typeof raw === 'object') {
+    const name = teamName(raw);
+    if (name !== '—') return name;
+    const id = pick(raw, 'id', 'leagueId', 'competitionId', 'tournamentId');
+    if (id !== null && leagueNames.has(String(id))) return leagueNames.get(String(id));
+  } else if (raw !== null && !/^\\d+$/.test(String(raw))) {
+    return String(raw);
+  }
+  const id = first(
+    pick(item, 'leagueId', 'competitionId', 'tournamentId', 'divisionId'),
+    pick(item?.league, 'id', 'leagueId'),
+    pick(item?.event, 'leagueId', 'competitionId', 'tournamentId')
+  );
+  return id !== null && leagueNames.has(String(id)) ? leagueNames.get(String(id)) : (id !== null ? String(id) : '—');
+}
+function normalizeBsd(event, prediction, leagueNames = new Map()) {
+  const sourceEvent = first(prediction?.event, prediction?.match, prediction?.fixture, event) || event;
+  const sourcePrediction = prediction || {};
+  const marketRoot = first(sourcePrediction.markets, sourcePrediction.Markets, sourcePrediction.predictions, sourcePrediction.Predictions, sourcePrediction.data?.markets, sourcePrediction.data?.predictions, {}) || {};
+  const result = first(pick(marketRoot, 'match_result', 'matchResult', 'result', '1x2', 'matchWinner'), {}) || {};
+  const ou = first(pick(marketRoot, 'over_under', 'total_goals', 'totalGoals', 'goals', 'overUnder'), {}) || {};
+  const corners = first(pick(marketRoot, 'corners', 'total_corners', 'totalCorners', 'cornerKicks'), {}) || {};
+  const expected = first(pick(marketRoot, 'expected_goals', 'expectedGoals', 'xg', 'goalExpectancy'), {}) || {};
+  const cards = first(pick(marketRoot, 'yellow_cards', 'yellowCards', 'cards', 'booking_points', 'totalCards'), {}) || {};
+  const predicted = first(
+    pick(result, 'predicted', 'prediction', 'winner', 'outcome', 'recommended'),
+    pick(sourcePrediction.recommendations || {}, 'favorite', 'predicted', 'winner'),
+    pick(sourcePrediction, 'predictedWinner', 'predicted', 'winner')
+  );
+  const probHomeRaw = first(pick(result, 'prob_home', 'probHome', 'homeProbability', 'homeWinProbability', 'home'), deepPick(sourcePrediction, ['prob_home', 'probHome', 'homeWinProbability']));
+  const probDrawRaw = first(pick(result, 'prob_draw', 'probDraw', 'drawProbability', 'draw'), deepPick(sourcePrediction, ['prob_draw', 'probDraw', 'drawProbability']));
+  const probAwayRaw = first(pick(result, 'prob_away', 'probAway', 'awayProbability', 'awayWinProbability', 'away'), deepPick(sourcePrediction, ['prob_away', 'probAway', 'awayWinProbability']));
+  const probHome = percent(probHomeRaw);
+  const probDraw = percent(probDrawRaw);
+  const probAway = percent(probAwayRaw);
+  const hasResultProbs = [probHomeRaw, probDrawRaw, probAwayRaw].some(value => value !== null && Number.isFinite(Number(value)));
   const outcome = predicted
-    ? ({ home: 'П1', draw: 'X', away: 'П2' })[String(predicted).toLowerCase()] || String(predicted)
+    ? ({ home: 'П1', homewin: 'П1', '1': 'П1', draw: 'X', tie: 'X', away: 'П2', awaywin: 'П2', '2': 'П2' })[String(predicted).toLowerCase()] || String(predicted)
     : hasResultProbs
       ? `П1 ${probHome ?? '—'} / X ${probDraw ?? '—'} / П2 ${probAway ?? '—'}`
       : '—';
-  const over15 = first(ou.prob_over_15, ou.prob_over_1_5);
-  const over25 = first(ou.prob_over_25, ou.prob_over_2_5);
-  const over35 = first(ou.prob_over_35, ou.prob_over_3_5);
-  const corner85 = first(corners.prob_over_85, corners.prob_over_8_5);
-  const corner95 = first(corners.prob_over_95, corners.prob_over_9_5);
-  const corner105 = first(corners.prob_over_105, corners.prob_over_10_5);
+  const over15 = first(pick(ou, 'prob_over_15', 'prob_over_1_5', 'over15Probability', 'over1_5'), deepPick(sourcePrediction, ['prob_over_15', 'prob_over_1_5']));
+  const over25 = first(pick(ou, 'prob_over_25', 'prob_over_2_5', 'over25Probability', 'over2_5'), deepPick(sourcePrediction, ['prob_over_25', 'prob_over_2_5']));
+  const over35 = first(pick(ou, 'prob_over_35', 'prob_over_3_5', 'over35Probability', 'over3_5'), deepPick(sourcePrediction, ['prob_over_35', 'prob_over_3_5']));
+  const corner85 = first(pick(corners, 'prob_over_85', 'prob_over_8_5', 'over85Probability', 'over8_5'), deepPick(sourcePrediction, ['prob_over_85', 'prob_over_8_5']));
+  const corner95 = first(pick(corners, 'prob_over_95', 'prob_over_9_5', 'over95Probability', 'over9_5'), deepPick(sourcePrediction, ['prob_over_95', 'prob_over_9_5']));
+  const corner105 = first(pick(corners, 'prob_over_105', 'prob_over_10_5', 'over105Probability', 'over10_5'), deepPick(sourcePrediction, ['prob_over_105', 'prob_over_10_5']));
+  const card25 = first(pick(cards, 'prob_over_25', 'prob_over_2_5', 'over25Probability', 'over2_5'), deepPick(sourcePrediction, ['yellowCardsOver25', 'prob_yellow_cards_over_25']));
+  const card35 = first(pick(cards, 'prob_over_35', 'prob_over_3_5', 'over35Probability', 'over3_5'), deepPick(sourcePrediction, ['yellowCardsOver35', 'prob_yellow_cards_over_35']));
+  const xgHome = first(pick(expected, 'home', 'homeXg', 'xgHome', 'homeExpectedGoals'), deepPick(sourcePrediction, ['homeXg', 'xgHome', 'homeExpectedGoals']));
+  const xgAway = first(pick(expected, 'away', 'awayXg', 'xgAway', 'awayExpectedGoals'), deepPick(sourcePrediction, ['awayXg', 'xgAway', 'awayExpectedGoals']));
+  const eventDate = first(
+    pick(sourceEvent, 'eventDate', 'startTime', 'kickoff', 'date', 'dateTime', 'matchDate', 'start'),
+    pick(sourcePrediction, 'eventDate', 'startTime', 'kickoff', 'date', 'dateTime', 'matchDate', 'start')
+  );
+  const home = first(pick(sourceEvent, 'homeTeam', 'home', 'teamHome', 'localTeam', 'homeTeamName'), pick(sourcePrediction, 'homeTeam', 'home', 'teamHome'));
+  const away = first(pick(sourceEvent, 'awayTeam', 'away', 'teamAway', 'visitorTeam', 'awayTeamName'), pick(sourcePrediction, 'awayTeam', 'away', 'teamAway'));
   const cornerParts = [
     corner85 !== null ? `8.5: ${percent(corner85)}` : null,
     corner95 !== null ? `9.5: ${percent(corner95)}` : null,
     corner105 !== null ? `10.5: ${percent(corner105)}` : null
   ].filter(Boolean);
-  const eventDate = first(event.event_date, event.start_time, event.kickoff, event.date);
+  const goalParts = [
+    over15 !== null ? `ТБ 1.5: ${percent(over15)}` : null,
+    over25 !== null ? `ТБ 2.5: ${percent(over25)}` : null,
+    over35 !== null ? `ТБ 3.5: ${percent(over35)}` : null
+  ].filter(Boolean);
+  const cardParts = [
+    card25 !== null ? `ТБ 2.5: ${percent(card25)}` : null,
+    card35 !== null ? `ТБ 3.5: ${percent(card35)}` : null
+  ].filter(Boolean);
   return {
     source: 'BSD',
-    eventId: first(event.id, prediction?.event_id, prediction?.event?.id),
+    eventId: first(pick(sourceEvent, 'id', 'eventId', 'matchId'), pick(sourcePrediction, 'eventId', 'matchId'), pick(sourcePrediction.event || {}, 'id')),
     time: eventDate,
-    league: first(event.league?.name, event.competition?.name, event.league_name, event.league, '—') && teamName(first(event.league?.name, event.competition?.name, event.league_name, event.league, '—')),
-    home: teamName(first(event.home_team, event.home, event.HomeTeam, '—')),
-    away: teamName(first(event.away_team, event.away, event.AwayTeam, '—')),
-    outcome,
-    totalGoals: [
-      over15 !== null ? `ТБ 1.5: ${percent(over15)}` : null,
-      over25 !== null ? `ТБ 2.5: ${percent(over25)}` : null,
-      over35 !== null ? `ТБ 3.5: ${percent(over35)}` : null
-    ].filter(Boolean).join(' / ') || (first(expected.home, expected.away) !== null ? `xG ${expected.home ?? '—'}–${expected.away ?? '—'}` : '—'),
-    individualTotals: first(expected.home, expected.away) !== null ? `Х ${expected.home ?? '—'} / Г ${expected.away ?? '—'} xG` : '—',
-    corners: cornerParts.length ? `ТБ угл. ${cornerParts.join(' / ')}` : '—',
-    yellowCards: '—'
-  };
-}
-function normalizeSstats(game) {
-  const prediction = game.prediction || game.predictions || game;
-  const markets = prediction.markets || prediction.predictions || {};
-  const dateTime = first(
-    game.Date, game.date, game.DateTime, game.dateTime, game.eventDate, game.event_date,
-    game.StartTime, game.startTime, game.start_time, game.Kickoff, game.kickoff,
-    game.MatchDate, game.matchDate, game.match_date, game.gameDate, game.GameDate,
-    game.start, game.timestamp, game.date_start, game.DateStart
-  );
-  const home = first(game.HomeTeamName, game.homeTeamName, game.homeTeam?.name, game.homeTeam, game.home, game.HomeTeam);
-  const away = first(game.AwayTeamName, game.awayTeamName, game.awayTeam?.name, game.awayTeam, game.away, game.AwayTeam);
-  return {
-    source: 'SStats',
-    eventId: first(game.Id, game.id, game.GameId, game.gameId),
-    time: dateTime,
-    league: first(game.LeagueName, game.leagueName, game.league?.name, game.league, game.League, '—') && teamName(first(game.LeagueName, game.leagueName, game.league?.name, game.league, game.League, '—')),
+    league: leagueNameFor(sourceEvent, leagueNames),
     home: teamName(home),
     away: teamName(away),
-    outcome: first(markets.match_result?.predicted, markets.matchResult, game.predictedWinner, game.PredictedWinner, '—'),
-    totalGoals: first(markets.over_under?.prediction, markets.totalGoals, game.TotalGoals, '—'),
-    individualTotals: '—',
-    corners: first(markets.corners?.prediction, markets.totalCorners, game.TotalCorners, '—'),
-    yellowCards: '—'
+    outcome,
+    totalGoals: goalParts.join(' / ') || (xgHome !== null || xgAway !== null ? `xG ${xgHome ?? '—'}–${xgAway ?? '—'}` : '—'),
+    individualTotals: xgHome !== null || xgAway !== null ? `Х ${xgHome ?? '—'} / Г ${xgAway ?? '—'} xG` : '—',
+    corners: cornerParts.length ? `ТБ угл. ${cornerParts.join(' / ')}` : '—',
+    yellowCards: cardParts.length ? cardParts.join(' / ') : '—'
+  };
+}
+function normalizeSstats(game, glicko = null, leagueNames = new Map()) {
+  const detail = glicko?.data || glicko?.result || glicko || {};
+  const prediction = first(game.prediction, game.predictions, game.Prediction, detail.prediction, detail.predictions, detail, game) || game;
+  const markets = first(prediction.markets, prediction.Markets, prediction.predictions, prediction.Predictions, {}) || {};
+  const dateTime = first(pick(game, 'Date', 'DateTime', 'eventDate', 'startTime', 'Kickoff', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start'));
+  const home = first(pick(game, 'HomeTeamName', 'homeTeamName', 'homeTeam', 'home', 'HomeTeam', 'teamHome'), pick(game.HomeTeam || {}, 'name', 'Name', 'teamName'));
+  const away = first(pick(game, 'AwayTeamName', 'awayTeamName', 'awayTeam', 'away', 'AwayTeam', 'teamAway'), pick(game.AwayTeam || {}, 'name', 'Name', 'teamName'));
+  const homeProb = first(
+    pick(markets.match_result || markets.matchResult || {}, 'prob_home', 'probHome', 'homeProbability', 'homeWinProbability'),
+    deepPick(detail, ['prob_home', 'probHome', 'homeProbability', 'homeWinProbability', 'homeWinProb'])
+  );
+  const drawProb = first(
+    pick(markets.match_result || markets.matchResult || {}, 'prob_draw', 'probDraw', 'drawProbability'),
+    deepPick(detail, ['prob_draw', 'probDraw', 'drawProbability', 'drawProb'])
+  );
+  const awayProb = first(
+    pick(markets.match_result || markets.matchResult || {}, 'prob_away', 'probAway', 'awayProbability', 'awayWinProbability'),
+    deepPick(detail, ['prob_away', 'probAway', 'awayProbability', 'awayWinProbability', 'awayWinProb'])
+  );
+  const winner = first(
+    pick(prediction, 'predictedWinner', 'winner', 'prediction', 'recommendedOutcome'),
+    deepPick(detail, ['predictedWinner', 'winner', 'recommendedOutcome'])
+  );
+  const hasProbs = [homeProb, drawProb, awayProb].some(v => v !== null && Number.isFinite(Number(v)));
+  const outcome = winner
+    ? ({ home: 'П1', homewin: 'П1', '1': 'П1', draw: 'X', tie: 'X', away: 'П2', awaywin: 'П2', '2': 'П2' })[String(winner).toLowerCase()] || String(winner)
+    : hasProbs ? `П1 ${percent(homeProb) ?? '—'} / X ${percent(drawProb) ?? '—'} / П2 ${percent(awayProb) ?? '—'}` : '—';
+  const xgHome = first(
+    deepPick(detail, ['homeXg', 'xgHome', 'homeExpectedGoals', 'expectedGoalsHome', 'homeXG', 'xGHome']),
+    deepPick(game, ['homeXg', 'xgHome', 'homeExpectedGoals', 'expectedGoalsHome'])
+  );
+  const xgAway = first(
+    deepPick(detail, ['awayXg', 'xgAway', 'awayExpectedGoals', 'expectedGoalsAway', 'awayXG', 'xGAway']),
+    deepPick(game, ['awayXg', 'xgAway', 'awayExpectedGoals', 'expectedGoalsAway'])
+  );
+  const over15 = deepPick(detail, ['prob_over_15', 'prob_over_1_5', 'over15Probability', 'over1_5Probability']);
+  const over25 = deepPick(detail, ['prob_over_25', 'prob_over_2_5', 'over25Probability', 'over2_5Probability']);
+  const over35 = deepPick(detail, ['prob_over_35', 'prob_over_3_5', 'over35Probability', 'over3_5Probability']);
+  const corners85 = deepPick(detail, ['prob_corners_over_85', 'cornersOver85Probability', 'prob_over_corners_8_5']);
+  const corners95 = deepPick(detail, ['prob_corners_over_95', 'cornersOver95Probability', 'prob_over_corners_9_5']);
+  const cards25 = deepPick(detail, ['prob_yellow_cards_over_25', 'yellowCardsOver25Probability', 'prob_cards_over_2_5']);
+  const cards35 = deepPick(detail, ['prob_yellow_cards_over_35', 'yellowCardsOver35Probability', 'prob_cards_over_3_5']);
+  const goalParts = [
+    over15 !== null ? `ТБ 1.5: ${percent(over15)}` : null,
+    over25 !== null ? `ТБ 2.5: ${percent(over25)}` : null,
+    over35 !== null ? `ТБ 3.5: ${percent(over35)}` : null
+  ].filter(Boolean);
+  const leagueId = first(pick(game, 'LeagueId', 'leagueId', 'LeagueID'), pick(game.League || {}, 'id', 'Id'));
+  let league = leagueNameFor(game, leagueNames);
+  if (league === '—' && leagueId !== null && leagueNames.has(String(leagueId))) league = leagueNames.get(String(leagueId));
+  const cornerParts = [
+    corners85 !== null ? `8.5: ${percent(corners85)}` : null,
+    corners95 !== null ? `9.5: ${percent(corners95)}` : null
+  ].filter(Boolean);
+  const cardParts = [
+    cards25 !== null ? `ТБ 2.5: ${percent(cards25)}` : null,
+    cards35 !== null ? `ТБ 3.5: ${percent(cards35)}` : null
+  ].filter(Boolean);
+  return {
+    source: 'SStats',
+    eventId: first(pick(game, 'Id', 'GameId', 'gameId', 'id')),
+    time: dateTime,
+    league,
+    home: teamName(home),
+    away: teamName(away),
+    outcome,
+    totalGoals: goalParts.join(' / ') || (xgHome !== null || xgAway !== null ? `xG сумма: ${(Number(xgHome || 0) + Number(xgAway || 0)).toFixed(2)}` : '—'),
+    individualTotals: xgHome !== null || xgAway !== null ? `Х ${xgHome ?? '—'} / Г ${xgAway ?? '—'} xG` : '—',
+    corners: cornerParts.length ? `ТБ угл. ${cornerParts.join(' / ')}` : '—',
+    yellowCards: cardParts.length ? cardParts.join(' / ') : '—'
   };
 }
 async function fetchBSD() {
@@ -126,124 +250,124 @@ async function fetchBSD() {
   if (!token) throw new Error('Не задан BSD_TOKEN в Environment Variables Vercel');
   const headers = { Authorization: `Token ${token}`, Accept: 'application/json' };
   const params = new URLSearchParams({ date_from: date, date_to: date, limit: '200', offset: '0' });
-
-  const [eventsResult, predictionsResult] = await Promise.allSettled([
-    getJson(`${BSD_BASE}/events/?${params}`, headers),
-    getJson(`${BSD_BASE}/predictions/?${params}`, headers)
+  const [eventsResult, predictionsResult, leaguesResult] = await Promise.allSettled([
+    getJson(`${BSD_BASE}/events/?${params}`, headers, 4500),
+    getJson(`${BSD_BASE}/predictions/?${params}`, headers, 4500),
+    getJson(`${BSD_BASE}/leagues/`, headers, 3500)
   ]);
   if (eventsResult.status === 'rejected' && predictionsResult.status === 'rejected') {
     throw new Error(`events: ${safeError(eventsResult.reason)}; predictions: ${safeError(predictionsResult.reason)}`);
   }
-
   const events = eventsResult.status === 'fulfilled' ? arr(eventsResult.value) : [];
   const predictions = predictionsResult.status === 'fulfilled' ? arr(predictionsResult.value) : [];
+  const leagueNames = new Map();
+  if (leaguesResult.status === 'fulfilled') {
+    for (const league of arr(leaguesResult.value)) {
+      const id = pick(league, 'id', 'leagueId', 'competitionId', 'tournamentId');
+      const name = pick(league, 'name', 'leagueName', 'competitionName', 'title', 'displayName');
+      if (id !== null && name !== null) leagueNames.set(String(id), String(name));
+    }
+  }
   const predictionByEvent = new Map();
   const predictionByTeams = new Map();
   const nameKey = value => String(teamName(value) || '')
     .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
     .toLocaleLowerCase('en').replace(/[^a-z0-9]+/g, ' ').trim();
   const eventTeamsKey = event => {
-    const home = first(event.home_team, event.home, event.HomeTeam, event.event?.home_team);
-    const away = first(event.away_team, event.away, event.AwayTeam, event.event?.away_team);
-    return home && away ? `${nameKey(home)}| ${nameKey(away)}` : null;
+    const home = first(pick(event, 'home_team', 'homeTeam', 'home', 'HomeTeam', 'homeTeamName'), pick(event?.event || {}, 'home_team', 'homeTeam', 'home'));
+    const away = first(pick(event, 'away_team', 'awayTeam', 'away', 'AwayTeam', 'awayTeamName'), pick(event?.event || {}, 'away_team', 'awayTeam', 'away'));
+    return home && away ? `${nameKey(home)}|${nameKey(away)}` : null;
   };
   for (const prediction of predictions) {
-    const eventId = first(prediction.event_id, prediction.event?.id, prediction.match_id, prediction.match?.id);
+    const nested = first(prediction.event, prediction.match, prediction.fixture, {}) || {};
+    const eventId = first(pick(prediction, 'event_id', 'eventId', 'match_id', 'matchId'), pick(nested, 'id', 'eventId', 'matchId'));
     if (eventId !== null) predictionByEvent.set(String(eventId), prediction);
-    const nestedEvent = prediction.event || prediction.match || prediction;
-    const teamsKey = eventTeamsKey(nestedEvent);
+    const teamsKey = eventTeamsKey(nested.home_team || nested.homeTeam ? nested : prediction);
     if (teamsKey) predictionByTeams.set(teamsKey, prediction);
   }
-
   if (events.length) {
     const matchedPredictions = events.map(event => {
-      const byId = predictionByEvent.get(String(first(event.id, event.event_id, event.eventId)));
-      const byTeams = predictionByTeams.get(eventTeamsKey(event));
-      return byId || byTeams || null;
+      const id = first(pick(event, 'id', 'event_id', 'eventId', 'matchId'));
+      return predictionByEvent.get(String(id)) || predictionByTeams.get(eventTeamsKey(event)) || null;
     });
-
-    // The docs expose a per-event prediction endpoint as a fallback. Limit the
-    // fallback fan-out so a sparse prediction feed cannot exhaust the serverless budget.
     const missingUpcoming = [];
     events.forEach((event, index) => {
-      const status = String(first(event.status, event.match_status, event.matchStatus, '')).toLowerCase();
-      const kickoff = first(event.event_date, event.start_time, event.kickoff, event.date);
+      const status = String(first(pick(event, 'status', 'matchStatus', 'match_status'), '')).toLowerCase();
+      const kickoff = first(pick(event, 'event_date', 'start_time', 'kickoff', 'date', 'dateTime', 'matchDate'));
       const isFuture = kickoff && Date.parse(kickoff) > Date.now();
-      const isUpcomingStatus = !status || ['upcoming', 'scheduled', 'not_started', 'not started', 'prematch', 'pre-match', 'ns'].includes(status);
-      if (!matchedPredictions[index] && kickoff && dateKey(kickoff) === date && isFuture &&
-          isUpcomingStatus && missingUpcoming.length < 12) {
+      const upcoming = !status || ['upcoming', 'scheduled', 'not_started', 'not started', 'prematch', 'pre-match', 'ns'].includes(status);
+      if (!matchedPredictions[index] && kickoff && dateKey(kickoff) === date && isFuture && upcoming && missingUpcoming.length < 18) {
         missingUpcoming.push({ event, index });
       }
     });
     await Promise.all(missingUpcoming.map(async ({ event, index }) => {
-      const eventId = first(event.id, event.event_id, event.eventId);
-      if (eventId === null) return;
+      const id = pick(event, 'id', 'event_id', 'eventId', 'matchId');
+      if (id === null) return;
       try {
-        const payload = await getJson(`${BSD_BASE}/events/${encodeURIComponent(eventId)}/prediction/`, headers, 2500);
-        const candidate = payload?.prediction || payload?.data?.prediction || payload?.data || payload;
-        if (candidate && (candidate.markets || candidate.predictions || candidate.recommendations)) {
+        const payload = await getJson(`${BSD_BASE}/events/${encodeURIComponent(id)}/prediction/`, headers, 2200);
+        const candidate = first(payload?.prediction, payload?.data?.prediction, payload?.data, payload);
+        if (candidate && (candidate.markets || candidate.Markets || candidate.predictions || candidate.Predictions || candidate.recommendations)) {
           matchedPredictions[index] = candidate;
         }
-      } catch {
-        // A per-event prediction can legitimately be absent; keep other matches.
-      }
+      } catch { /* Some events do not have a prediction yet. */ }
     }));
-
     const matched = matchedPredictions.filter(Boolean).length;
-    const rows = events.map((event, index) => normalizeBsd(event, matchedPredictions[index]));
-    if (predictionsResult.status === 'rejected') {
-      sourceStatus.bsd.message = `Расписание получено, прогнозы BSD недоступны: ${safeError(predictionsResult.reason)}`;
-    } else if (predictions.length && matched === 0) {
-      sourceStatus.bsd.message = `Получено ${events.length} матчей и ${predictions.length} прогнозов BSD, но сопоставить прогнозы не удалось`;
-    } else {
-      sourceStatus.bsd.message = `Прогнозы BSD сопоставлены: ${matched} из ${events.length} матчей`;
-    }
+    const rows = events.map((event, index) => normalizeBsd(event, matchedPredictions[index], leagueNames));
+    sourceStatus.bsd.message = predictionsResult.status === 'rejected'
+      ? `Расписание получено, прогнозы BSD недоступны: ${safeError(predictionsResult.reason)}`
+      : predictions.length && matched === 0
+        ? `Получено ${events.length} матчей и ${predictions.length} прогнозов BSD, но сопоставить прогнозы не удалось`
+        : `Прогнозы BSD сопоставлены: ${matched} из ${events.length} матчей`;
     return rows;
   }
-
   return predictions.map(prediction => {
-    const event = prediction.event || prediction.match || prediction;
-    return normalizeBsd(event, prediction);
+    const event = first(prediction.event, prediction.match, prediction.fixture, prediction) || prediction;
+    return normalizeBsd(event, prediction, leagueNames);
   });
 }
 async function fetchSStats() {
   const token = process.env.SSTATS_TOKEN || '';
   if (!token) throw new Error('Не задан SSTATS_TOKEN в Environment Variables Vercel');
-  // SStats documents Date as a direct Games/list filter. Use its documented
-  // casing and request one day instead of a broad year-wide query.
   const params = new URLSearchParams({ Date: date, Limit: '200', Offset: '0', apikey: token });
   const [gamesResult, leaguesResult] = await Promise.allSettled([
-    getJson(`${SSTATS_BASE}/games/list?${params}`, {}, 7000),
-    getJson(`${SSTATS_BASE}/leagues`, {}, 3500)
+    getJson(`${SSTATS_BASE}/games/list?${params}`, {}, 5000),
+    getJson(`${SSTATS_BASE}/leagues?apikey=${encodeURIComponent(token)}`, {}, 3000)
   ]);
   if (gamesResult.status === 'rejected') throw gamesResult.reason;
-  const payload = gamesResult.value;
-  const games = arr(payload);
-  const leaguesPayload = leaguesResult.status === 'fulfilled' ? leaguesResult.value : null;
-  const leagueRows = arr(leaguesPayload);
+  const games = arr(gamesResult.value);
   const leagueNames = new Map();
-  for (const league of leagueRows) {
-    const id = first(league.Id, league.id, league.LeagueId, league.leagueId);
-    const name = first(league.Name, league.name, league.LeagueName, league.leagueName, league.Title, league.title);
-    if (id !== null && name !== null) leagueNames.set(String(id), name);
-  }
-  return games.filter(game => {
-    const raw = first(
-      game.Date, game.date, game.DateTime, game.dateTime, game.eventDate, game.event_date,
-      game.StartTime, game.startTime, game.start_time, game.Kickoff, game.kickoff,
-      game.MatchDate, game.matchDate, game.match_date, game.gameDate, game.GameDate,
-      game.start, game.timestamp, game.date_start, game.DateStart
-    );
-    return dateKey(raw) === date;
-  }).map(game => {
-    const leagueId = first(game.LeagueId, game.leagueId, game.LeagueID);
-    const normalized = normalizeSstats(game);
-    if (leagueId !== null && leagueNames.has(String(leagueId)) &&
-        (normalized.league === '—' || String(normalized.league) === String(leagueId) || /^\d+$/.test(String(normalized.league)))) {
-      normalized.league = leagueNames.get(String(leagueId));
+  if (leaguesResult.status === 'fulfilled') {
+    for (const league of arr(leaguesResult.value)) {
+      const id = pick(league, 'Id', 'LeagueId', 'leagueId');
+      const name = pick(league, 'Name', 'LeagueName', 'leagueName', 'Title', 'title');
+      if (id !== null && name !== null) leagueNames.set(String(id), String(name));
     }
-    return normalized;
+  }
+  const todayGames = games.filter(game => {
+    const raw = pick(game, 'Date', 'DateTime', 'eventDate', 'StartTime', 'Kickoff', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start');
+    return !raw || dateKey(raw) === date;
   });
+  // Glicko/xG is a separate documented endpoint, not part of /games/list.
+  // Query it concurrently so the table gets actual model fields instead of empty placeholders.
+  const glickoPairs = await Promise.all(todayGames.map(async game => {
+    const id = pick(game, 'Id', 'GameId', 'gameId', 'id');
+    if (id === null) return [String(id), null];
+    try {
+      const result = await getJson(`${SSTATS_BASE}/games/glicko/${encodeURIComponent(id)}?apikey=${encodeURIComponent(token)}`, {}, 2600);
+      return [String(id), result];
+    } catch (error) {
+      return [String(id), null];
+    }
+  }));
+  const glickoById = new Map(glickoPairs);
+  const rows = todayGames.map(game => {
+    const id = pick(game, 'Id', 'GameId', 'gameId', 'id');
+    const detail = id === null ? null : glickoById.get(String(id));
+    return normalizeSstats(game, detail, leagueNames);
+  });
+  const enriched = glickoPairs.filter(([, value]) => value !== null).length;
+  sourceStatus.sstats.message = `SStats: получено ${todayGames.length} матчей, Glicko/xG доступны для ${enriched}`;
+  return rows;
 }
 async function runSource(name, fn) {
   try {
