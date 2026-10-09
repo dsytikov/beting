@@ -140,19 +140,18 @@ table {
     font-size: 12px;
 }
 
-/* Column proportions tuned for a desktop viewport around 1920px wide. */
-th:nth-child(1), td:nth-child(1) { width: 8%; }
-th:nth-child(2), td:nth-child(2) { width: 10%; }
+/* Column proportions for the 11 visible columns; reserve room for match result text. */
+th:nth-child(1), td:nth-child(1) { width: 10%; }
+th:nth-child(2), td:nth-child(2) { width: 9%; }
 th:nth-child(3), td:nth-child(3) { width: 9%; }
 th:nth-child(4), td:nth-child(4) { width: 9%; }
-th:nth-child(5), td:nth-child(5) { width: 6%; }
-th:nth-child(6), td:nth-child(6) { width: 9%; }
-th:nth-child(7), td:nth-child(7) { width: 10%; }
-th:nth-child(8), td:nth-child(8) { width: 10%; }
+th:nth-child(5), td:nth-child(5) { width: 10%; }
+th:nth-child(6), td:nth-child(6) { width: 8%; }
+th:nth-child(7), td:nth-child(7) { width: 8%; }
+th:nth-child(8), td:nth-child(8) { width: 8%; }
 th:nth-child(9), td:nth-child(9) { width: 8%; }
-th:nth-child(10), td:nth-child(10) { width: 7%; }
-th:nth-child(11), td:nth-child(11) { width: 9%; }
-th:nth-child(12), td:nth-child(12) { width: 5%; }
+th:nth-child(10), td:nth-child(10) { width: 8%; }
+th:nth-child(11), td:nth-child(11) { width: 13%; }
 
 thead { background: var(--surface-alt); }
 
@@ -256,7 +255,8 @@ tbody tr.high-probability-row:hover {
 
 .result-cell {
     font-weight: 700;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
     font-variant-numeric: tabular-nums;
 }
 
