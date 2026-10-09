@@ -89,8 +89,8 @@ function dateKey(value) {
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
 }
-async function getJson(url, headers = {}, timeoutMs = 5000) {
-  const response = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
+async function getJson(url, headers = {}, timeoutMs = 5000, options = {}) {
+  const response = await fetch(url, { ...options, headers: { ...headers, ...(options.headers || {}) }, signal: AbortSignal.timeout(timeoutMs) });
   const body = await response.text();
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${body.slice(0, 160)}`);
   try { return JSON.parse(body); } catch { throw new Error('API вернул не JSON'); }
@@ -436,18 +436,35 @@ async function fetchSStats() {
   const token = process.env.SSTATS_TOKEN || '';
   if (!token) throw new Error('Не задан SSTATS_TOKEN в Environment Variables Vercel');
   const apiKey = `apikey=${encodeURIComponent(token)}`;
-  // Date/Today/Upcoming repeatedly time out on SStats. Use the exact range first,
-  // then a documented Year query as a fallback and filter the returned rows locally.
+  // Avoid a full-year scan: it can time out on SStats. Try the exact date range,
+  // then the documented POST /games/query endpoint with a bounded date condition.
   // Fetch league metadata concurrently to reduce total serverless execution time.
   const leaguesPromise = getJson(`${SSTATS_BASE}/leagues?${apiKey}`, {}, 1800).catch(() => null);
   const querySpecs = [
-    { label: 'From/To', query: { From: date, To: date, Order: '-1' }, timeoutMs: 4500 },
-    { label: 'Year fallback', query: { Year: date.slice(0, 4), Order: '-1' }, timeoutMs: 5500 }
+    { label: 'From/To', method: 'GET', query: { From: date, To: date, Order: '-1' }, timeoutMs: 4500 },
+    {
+      label: 'Games/query date condition',
+      method: 'POST',
+      timeoutMs: 5500,
+      body: {
+        condition: `Date >= '${date}' AND Date < '${new Date(Date.parse(date + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10)}'`,
+        fields: ['Id', 'Date', 'HomeTeamName', 'AwayTeamName', 'LeagueId', 'Status', 'HomeScore', 'AwayScore'],
+        format: 'json',
+        timezone: 0,
+        order: 'Date',
+        offset: 0,
+        limit: 300
+      }
+    }
   ];
   const attempts = await Promise.all(querySpecs.map(async spec => {
     try {
-      const queryParams = new URLSearchParams({ ...spec.query, Limit: '300', Offset: '0', apikey: token });
-      const payload = await getJson(SSTATS_BASE + '/games/list?' + queryParams.toString(), {}, spec.timeoutMs);
+      const queryParams = new URLSearchParams({ ...(spec.query || {}), apikey: token });
+      const url = SSTATS_BASE + (spec.method === 'POST' ? '/games/query?' : '/games/list?') + queryParams.toString();
+      const options = spec.method === 'POST'
+        ? { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(spec.body) }
+        : {};
+      const payload = await getJson(url, {}, spec.timeoutMs, options);
       const rows = arr(payload);
       const matching = rows.filter(game => {
         const raw = pick(game, 'Date', 'DateTime', 'eventDate', 'StartTime', 'StartDate', 'StartDateTime', 'GameDate', 'GameDateTime', 'UtcDate', 'DateUtc', 'DateLocal', 'Kickoff', 'KickoffTime', 'StartTimeUtc', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start');
