@@ -257,3 +257,38 @@ tbody tr.high-probability-row:hover {
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
 }
+
+.source-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 0 0 10px;
+}
+
+.source-filter-btn {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 14px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.source-filter-btn:hover {
+    border-color: var(--accent);
+}
+
+.source-filter-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #0f172a;
+}
+
+@media (max-width: 700px) {
+    .source-filter-bar { gap: 6px; }
+    .source-filter-btn { padding: 7px 10px; font-size: 11px; }
+}
