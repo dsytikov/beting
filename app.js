@@ -121,14 +121,12 @@ function renderTable() {
     addCell(tr, item.league);
     addCell(tr, item.home);
     addCell(tr, item.away);
-    addCell(tr, item.outcome, 'prediction-cell');
     addCell(tr, item.probabilityOutcome, 'prediction-cell');
     addCell(tr, item.oneX, 'prediction-cell');
     addCell(tr, item.twelve, 'prediction-cell');
     addCell(tr, item.xTwo, 'prediction-cell');
     addCell(tr, item.totalGoals, 'prediction-cell');
     addCell(tr, item.underGoals, 'prediction-cell');
-    addCell(tr, item.individualTotals, 'prediction-cell');
     addCell(tr, item.corners, 'prediction-cell');
     addCell(tr, item.actualResult, 'result-cell');
     addCell(tr, item.source, 'source-cell');
