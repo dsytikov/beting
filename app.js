@@ -46,6 +46,7 @@ function renderTable() {
     addCell(tr, item.home);
     addCell(tr, item.away);
     addCell(tr, item.outcome, 'prediction-cell');
+    addCell(tr, item.probabilityOutcome, 'prediction-cell');
     addCell(tr, item.totalGoals, 'prediction-cell');
     addCell(tr, item.individualTotals, 'prediction-cell');
     addCell(tr, item.corners, 'prediction-cell');
