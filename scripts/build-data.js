@@ -441,17 +441,17 @@ async function fetchSStats() {
   const querySpecs = [
     { label: 'Date', query: { Date: date } },
     { label: 'Today', query: { Today: 'true' } },
-    { label: 'From/To', query: { From: date, To: date } },
-    { label: 'Default list', query: {} }
+    { label: 'Upcoming', query: { Upcoming: 'true' } },
+    { label: 'From/To', query: { From: date, To: date } }
   ];
   const attempts = await Promise.all(querySpecs.map(async spec => {
     try {
       const queryParams = new URLSearchParams({ ...spec.query, Limit: '200', Offset: '0', apikey: token });
-      const payload = await getJson(SSTATS_BASE + '/games/list?' + queryParams.toString(), {}, 3200);
+      const payload = await getJson(SSTATS_BASE + '/games/list?' + queryParams.toString(), {}, 5000);
       const rows = arr(payload);
       const matching = rows.filter(game => {
-        const raw = pick(game, 'Date', 'DateTime', 'eventDate', 'StartTime', 'Kickoff', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start');
-        return !raw || dateKey(raw) === date;
+        const raw = pick(game, 'Date', 'DateTime', 'eventDate', 'StartTime', 'StartDate', 'StartDateTime', 'GameDate', 'GameDateTime', 'UtcDate', 'DateUtc', 'DateLocal', 'Kickoff', 'KickoffTime', 'StartTimeUtc', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start');
+        return raw !== null && dateKey(raw) === date;
       });
       const envelope = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
       return {
@@ -460,6 +460,8 @@ async function fetchSStats() {
         rows,
         matching,
         count: first(pick(envelope, 'count', 'totalCount', 'TotalCount'), rows.length),
+        status: pick(envelope, 'status'),
+        message: pick(envelope, 'message'),
         keys: Object.keys(envelope).slice(0, 12)
       };
     } catch (error) {
@@ -473,7 +475,7 @@ async function fetchSStats() {
   const gamesPayload = chosen ? chosen.payload : null;
   const attemptSummary = attempts.map(item => item.error
     ? item.label + ': timeout/ошибка ' + item.error
-    : item.label + ': count=' + item.count + ', строк=' + item.rows.length + ', совпало по дате=' + item.matching.length + ', ключи=' + (item.keys.join(',') || 'массив/не объект')).join('; ');
+    : item.label + ': status=' + (item.status ?? '—') + ', count=' + item.count + ', строк=' + item.rows.length + ', совпало по дате=' + item.matching.length + (item.message ? ', message=' + String(item.message).slice(0, 100) : '') + ', ключи=' + (item.keys.join(',') || 'массив/не объект')).join('; ');
   sourceStatus.sstats.diagnostic = 'SStats: ' + attemptSummary;
   const games = arr(gamesPayload);
   let leaguesPayload = null;
@@ -490,14 +492,14 @@ async function fetchSStats() {
     }
   }
   const todayGames = games.filter(game => {
-    const raw = pick(game, 'Date', 'DateTime', 'eventDate', 'StartTime', 'Kickoff', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start');
-    return !raw || dateKey(raw) === date;
+    const raw = pick(game, 'Date', 'DateTime', 'eventDate', 'StartTime', 'StartDate', 'StartDateTime', 'GameDate', 'GameDateTime', 'UtcDate', 'DateUtc', 'DateLocal', 'Kickoff', 'KickoffTime', 'StartTimeUtc', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start');
+    return raw !== null && dateKey(raw) === date;
   });
   if (!todayGames.length) {
     const sample = games[0];
     const sampleKeys = sample && typeof sample === 'object' ? Object.keys(sample).slice(0, 24).join(',') : typeof sample;
     const sampleDate = sample && typeof sample === 'object'
-      ? pick(sample, 'Date', 'DateTime', 'eventDate', 'StartTime', 'Kickoff', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start')
+      ? pick(sample, 'Date', 'DateTime', 'eventDate', 'StartTime', 'StartDate', 'StartDateTime', 'GameDate', 'GameDateTime', 'UtcDate', 'DateUtc', 'DateLocal', 'Kickoff', 'KickoffTime', 'StartTimeUtc', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start')
       : null;
     sourceStatus.sstats.diagnostic += '; итог: строк после разбора ' + games.length + ', после фильтра даты ' + todayGames.length + ', поля первого матча: ' + (sampleKeys || 'нет') + ', дата первого матча: ' + (sampleDate ?? 'не найдена');
   }
