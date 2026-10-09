@@ -125,7 +125,9 @@ main {
 .table-wrapper {
     width: 100%;
     max-width: 100%;
-    overflow-x: hidden;
+    /* Avoid creating an overflow scroll container: it prevents sticky table headers
+       from following the page scroll in several browsers. */
+    overflow: visible;
     border-radius: 8px;
     border: 1px solid var(--border);
 }
