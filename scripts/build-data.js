@@ -318,7 +318,7 @@ async function fetchBSD() {
       const kickoff = first(pick(event, 'event_date', 'start_time', 'kickoff', 'date', 'dateTime', 'matchDate'));
       const isFuture = kickoff && Date.parse(kickoff) > Date.now();
       const upcoming = !status || ['upcoming', 'scheduled', 'not_started', 'not started', 'prematch', 'pre-match', 'ns'].includes(status);
-      if (!matchedPredictions[index] && kickoff && dateKey(kickoff) === date && isFuture && upcoming && missingUpcoming.length < 18) {
+      if (!matchedPredictions[index] && kickoff && dateKey(kickoff) === date && isFuture && upcoming && missingUpcoming.length < 30) {
         missingUpcoming.push({ event, index });
       }
     });
@@ -328,8 +328,9 @@ async function fetchBSD() {
       try {
         const payload = await getJson(`${BSD_BASE}/events/${encodeURIComponent(id)}/prediction/`, headers, 2200);
         const candidate = first(payload?.prediction, payload?.data?.prediction, payload?.data, payload);
-        if (candidate && (candidate.markets || candidate.Markets || candidate.predictions || candidate.Predictions || candidate.recommendations)) {
-          matchedPredictions[index] = candidate;
+        const unwrapped = first(candidate?.prediction, candidate?.data?.prediction, candidate?.data, candidate) || candidate;
+        if (unwrapped && (unwrapped.markets || unwrapped.Markets || unwrapped.predictions || unwrapped.Predictions || unwrapped.recommendations)) {
+          matchedPredictions[index] = unwrapped;
         }
       } catch { /* Some events do not have a prediction yet. */ }
     }));
@@ -340,6 +341,8 @@ async function fetchBSD() {
       sourceStatus.bsd.message = `Расписание получено, прогнозы BSD недоступны: ${safeError(predictionsResult.reason)}`;
     } else if (predictions.length && matched === 0) {
       sourceStatus.bsd.message = `Получено ${events.length} матчей и ${predictions.length} прогнозов BSD, но сопоставить прогнозы не удалось`;
+    } else if (matched === 0) {
+      sourceStatus.bsd.message = `BSD вернул расписание (${events.length} матчей), но не вернул распознаваемые прогнозы; проверьте ответ /predictions/ и права токена`;
     }
     return rows;
   }
@@ -353,8 +356,8 @@ async function fetchSStats() {
   if (!token) throw new Error('Не задан SSTATS_TOKEN в Environment Variables Vercel');
   const params = new URLSearchParams({ Date: date, Limit: '200', Offset: '0', apikey: token });
   const [gamesResult, leaguesResult] = await Promise.allSettled([
-    getJson(`${SSTATS_BASE}/games/list?${params}`, {}, 5000),
-    getJson(`${SSTATS_BASE}/leagues?apikey=${encodeURIComponent(token)}`, {}, 3000)
+    getJson(`${SSTATS_BASE}/games/list?${params}`, {}, 7800),
+    getJson(`${SSTATS_BASE}/leagues?apikey=${encodeURIComponent(token)}`, {}, 3500)
   ]);
   if (gamesResult.status === 'rejected') throw gamesResult.reason;
   const games = arr(gamesResult.value);
@@ -372,7 +375,8 @@ async function fetchSStats() {
   });
   // Glicko/xG is a separate documented endpoint, not part of /games/list.
   // Query it concurrently so the table gets actual model fields instead of empty placeholders.
-  const glickoPairs = await Promise.all(todayGames.map(async game => {
+  const glickoTargets = todayGames.slice(0, 10); // Keep enrichment bounded so one slow provider cannot exhaust the Vercel request budget.
+  const glickoPairs = await Promise.all(glickoTargets.map(async game => {
     const id = pick(game, 'Id', 'GameId', 'gameId', 'id');
     if (id === null) return [String(id), null];
     try {
