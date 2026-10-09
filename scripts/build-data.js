@@ -275,7 +275,7 @@ async function fetchBSD() {
   const [eventsResult, predictionsResult, leaguesResult] = await Promise.allSettled([
     getJson(`${BSD_BASE}/events/?${params}`, headers, 4500),
     getJson(`${BSD_BASE}/predictions/?${params}`, headers, 4500),
-    getJson(`${BSD_BASE}/leagues/`, headers, 3500)
+    getJson(`${BSD_BASE}/leagues/?limit=200&offset=0`, headers, 3500)
   ]);
   if (eventsResult.status === 'rejected' && predictionsResult.status === 'rejected') {
     throw new Error(`events: ${safeError(eventsResult.reason)}; predictions: ${safeError(predictionsResult.reason)}`);
@@ -318,22 +318,32 @@ async function fetchBSD() {
       const kickoff = first(pick(event, 'event_date', 'start_time', 'kickoff', 'date', 'dateTime', 'matchDate'));
       const isFuture = kickoff && Date.parse(kickoff) > Date.now();
       const upcoming = !status || ['upcoming', 'scheduled', 'not_started', 'not started', 'prematch', 'pre-match', 'ns'].includes(status);
-      if (!matchedPredictions[index] && kickoff && dateKey(kickoff) === date && isFuture && upcoming && missingUpcoming.length < 30) {
+      if (!matchedPredictions[index] && kickoff && dateKey(kickoff) === date && isFuture && upcoming && missingUpcoming.length < 53) {
         missingUpcoming.push({ event, index });
       }
     });
-    await Promise.all(missingUpcoming.map(async ({ event, index }) => {
+    // Query the documented per-event endpoint for missing forecasts too; /predictions/ can be empty while events exist.
+    // Bound concurrency to avoid rate spikes and keep the whole refresh within the serverless budget.
+    let cursor = 0;
+    const workers = Array.from({ length: 18 }, async () => {
+      while (cursor < missingUpcoming.length) {
+        const item = missingUpcoming[cursor++];
+        await fetchEventPrediction(item);
+      }
+    });
+    async function fetchEventPrediction({ event, index }) {
       const id = pick(event, 'id', 'event_id', 'eventId', 'matchId');
       if (id === null) return;
       try {
-        const payload = await getJson(`${BSD_BASE}/events/${encodeURIComponent(id)}/prediction/`, headers, 2200);
+        const payload = await getJson(`${BSD_BASE}/events/${encodeURIComponent(id)}/prediction/`, headers, 2500);
         const candidate = first(payload?.prediction, payload?.data?.prediction, payload?.data, payload);
         const unwrapped = first(candidate?.prediction, candidate?.data?.prediction, candidate?.data, candidate) || candidate;
         if (unwrapped && (unwrapped.markets || unwrapped.Markets || unwrapped.predictions || unwrapped.Predictions || unwrapped.recommendations)) {
           matchedPredictions[index] = unwrapped;
         }
       } catch { /* Some events do not have a prediction yet. */ }
-    }));
+    }
+    await Promise.all(workers);
     const matched = matchedPredictions.filter(Boolean).length;
     const rows = events.map((event, index) => normalizeBsd(event, matchedPredictions[index], leagueNames));
     sourceStatus.bsd.diagnostic = `Прогнозы BSD сопоставлены: ${matched} из ${events.length} матчей`;
@@ -354,13 +364,29 @@ async function fetchBSD() {
 async function fetchSStats() {
   const token = process.env.SSTATS_TOKEN || '';
   if (!token) throw new Error('Не задан SSTATS_TOKEN в Environment Variables Vercel');
-  const params = new URLSearchParams({ Date: date, Limit: '200', Offset: '0', apikey: token });
-  const [gamesResult, leaguesResult] = await Promise.allSettled([
-    getJson(`${SSTATS_BASE}/games/list?${params}`, {}, 7800),
-    getJson(`${SSTATS_BASE}/leagues?apikey=${encodeURIComponent(token)}`, {}, 3500)
-  ]);
-  if (gamesResult.status === 'rejected') throw gamesResult.reason;
-  const games = arr(gamesResult.value);
+  const apiKey = `apikey=${encodeURIComponent(token)}`;
+  // Try the documented single-date filter first; some API deployments respond more reliably to From/To.
+  let gamesPayload;
+  let firstError;
+  try {
+    const params = new URLSearchParams({ Date: date, Limit: '200', Offset: '0', apikey: token });
+    gamesPayload = await getJson(`${SSTATS_BASE}/games/list?${params}`, {}, 4300);
+  } catch (error) {
+    firstError = error;
+    try {
+      const params = new URLSearchParams({ From: date, To: date, Limit: '200', Offset: '0', apikey: token });
+      gamesPayload = await getJson(`${SSTATS_BASE}/games/list?${params}`, {}, 4000);
+      sourceStatus.sstats.diagnostic = `SStats: основной фильтр Date не ответил, сработал запасной From/To (${safeError(firstError)})`;
+    } catch (fallbackError) {
+      throw new Error(`games/list Date: ${safeError(firstError)}; From/To: ${safeError(fallbackError)}`);
+    }
+  }
+  const games = arr(gamesPayload);
+  let leaguesPayload = null;
+  try {
+    leaguesPayload = await getJson(`${SSTATS_BASE}/leagues?${apiKey}`, {}, 1800);
+  } catch { /* League names are optional; match data should still load. */ }
+  const leaguesResult = { status: leaguesPayload ? 'fulfilled' : 'rejected', value: leaguesPayload };
   const leagueNames = new Map();
   if (leaguesResult.status === 'fulfilled') {
     for (const league of arr(leaguesResult.value)) {
