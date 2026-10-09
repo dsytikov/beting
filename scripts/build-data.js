@@ -104,14 +104,14 @@ function leagueNameFor(item, leagueNames = new Map()) {
     if (name !== '—') return name;
     const id = pick(raw, 'id', 'leagueId', 'competitionId', 'tournamentId');
     if (id !== null && leagueNames.has(String(id))) return leagueNames.get(String(id));
-  } else if (raw !== null && !/^\\d+$/.test(String(raw))) {
+  } else if (raw !== null && !/^\d+$/.test(String(raw))) {
     return String(raw);
   }
   const id = first(
     pick(item, 'leagueId', 'competitionId', 'tournamentId', 'divisionId'),
     pick(item?.league, 'id', 'leagueId'),
     pick(item?.event, 'leagueId', 'competitionId', 'tournamentId'),
-    raw !== null && typeof raw !== 'object' && /^\\d+$/.test(String(raw)) ? raw : null
+    raw !== null && typeof raw !== 'object' && /^\d+$/.test(String(raw)) ? raw : null
   );
   return id !== null && leagueNames.has(String(id)) ? leagueNames.get(String(id)) : (id !== null ? String(id) : '—');
 }
@@ -293,7 +293,7 @@ async function fetchBSD() {
   const predictionByEvent = new Map();
   const predictionByTeams = new Map();
   const nameKey = value => String(teamName(value) || '')
-    .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .toLocaleLowerCase('en').replace(/[^a-z0-9]+/g, ' ').trim();
   const eventTeamsKey = event => {
     const home = first(pick(event, 'home_team', 'homeTeam', 'home', 'HomeTeam', 'homeTeamName'), pick(event?.event || {}, 'home_team', 'homeTeam', 'home'));
