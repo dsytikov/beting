@@ -6,9 +6,10 @@ function responseMock() {
   return {
     statusCode: 200,
     headers: {},
-    body: '',
+    payload: undefined,
     setHeader(name, value) { this.headers[name.toLowerCase()] = value; },
-    end(value) { this.body = value || ''; this.payload = this.body ? JSON.parse(this.body) : null; return this; }
+    status(code) { this.statusCode = code; return this; },
+    json(value) { this.payload = value; return this; }
   };
 }
 
@@ -20,7 +21,7 @@ async function main() {
   health({ method: 'GET' }, healthRes);
   assert.equal(healthRes.statusCode, 200);
   assert.equal(healthRes.payload.ok, true);
-  assert.equal(healthRes.payload.runtime, 'nodejs');
+  assert.equal(healthRes.payload.service, 'beting-dashboard');
 
   const methodRes = responseMock();
   health({ method: 'POST' }, methodRes);
@@ -51,7 +52,7 @@ async function main() {
     else process.env.SSTATS_TOKEN = oldSstats;
   }
 
-  console.log('Smoke tests passed: native Node API responses and source-error JSON are valid.');
+  console.log('Smoke tests passed: Vercel-style Node responses and source-error JSON are valid.');
 }
 
 main().catch((error) => {
