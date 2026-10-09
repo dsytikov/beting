@@ -72,6 +72,13 @@ async function main() {
   assert.match(bsdRow.corners, /9.5: 52.0%/);
   assert.match(bsdRow.yellowCards, /3.5: 44.0%/);
 
+  const bsdDocumentedSchemaRow = normalizeBsd(
+    { id: 606053, event_date: '2026-10-09T18:00:00Z', home_team: 'Home FC', away_team: 'Away FC' },
+    { event: { id: 606053 }, prob_home_win: 52.3, prob_draw: 24.1, prob_away_win: 23.6, predicted_result: 'H' }
+  );
+  assert.equal(bsdDocumentedSchemaRow.probabilityOutcome, 'П1 52.3% / X 24.1% / П2 23.6%');
+  assert.equal(bsdDocumentedSchemaRow.outcome, 'П1');
+
   const leagueIdRow = normalizeBsd(
     { id: 43, event_date: '2026-10-09T18:00:00Z', league: { id: 50 }, home_team: 'Home FC', away_team: 'Away FC' },
     { event: { id: 43 }, markets: { match_result: { predicted: 'away' } } },
