@@ -7,8 +7,8 @@ const SSTATS_BASE = 'https://api.sstats.net';
 let date = new Date().toISOString().slice(0, 10);
 const errors = [];
 const sourceStatus = {
-  bsd: { ok: false, count: 0, message: '' },
-  sstats: { ok: false, count: 0, message: '' }
+  bsd: { ok: false, count: 0, message: '', diagnostic: '' },
+  sstats: { ok: false, count: 0, message: '', diagnostic: '' }
 };
 
 function arr(payload, depth = 0) {
@@ -335,11 +335,12 @@ async function fetchBSD() {
     }));
     const matched = matchedPredictions.filter(Boolean).length;
     const rows = events.map((event, index) => normalizeBsd(event, matchedPredictions[index], leagueNames));
-    sourceStatus.bsd.message = predictionsResult.status === 'rejected'
-      ? `Расписание получено, прогнозы BSD недоступны: ${safeError(predictionsResult.reason)}`
-      : predictions.length && matched === 0
-        ? `Получено ${events.length} матчей и ${predictions.length} прогнозов BSD, но сопоставить прогнозы не удалось`
-        : `Прогнозы BSD сопоставлены: ${matched} из ${events.length} матчей`;
+    sourceStatus.bsd.diagnostic = `Прогнозы BSD сопоставлены: ${matched} из ${events.length} матчей`;
+    if (predictionsResult.status === 'rejected') {
+      sourceStatus.bsd.message = `Расписание получено, прогнозы BSD недоступны: ${safeError(predictionsResult.reason)}`;
+    } else if (predictions.length && matched === 0) {
+      sourceStatus.bsd.message = `Получено ${events.length} матчей и ${predictions.length} прогнозов BSD, но сопоставить прогнозы не удалось`;
+    }
     return rows;
   }
   return predictions.map(prediction => {
@@ -388,17 +389,19 @@ async function fetchSStats() {
     return normalizeSstats(game, detail, leagueNames);
   });
   const enriched = glickoPairs.filter(([, value]) => value !== null).length;
-  sourceStatus.sstats.message = `SStats: получено ${todayGames.length} матчей, Glicko/xG доступны для ${enriched}`;
+  sourceStatus.sstats.diagnostic = `SStats: получено ${todayGames.length} матчей, Glicko/xG доступны для ${enriched}`;
   return rows;
 }
 async function runSource(name, fn) {
   try {
     const rows = await fn();
     const priorMessage = sourceStatus[name].message;
+    const diagnostic = sourceStatus[name].diagnostic || '';
     sourceStatus[name] = {
       ok: true,
       count: rows.length,
-      message: priorMessage || (rows.length ? '' : `API ответил, но матчи за ${date} не найдены или формат ответа не распознан`)
+      message: priorMessage || (rows.length ? '' : `API ответил, но матчи за ${date} не найдены или формат ответа не распознан`),
+      diagnostic
     };
     if (!rows.length) errors.push(`${name === 'bsd' ? 'BSD' : 'SStats'}: ${sourceStatus[name].message}`);
     else if (priorMessage) errors.push(`${name === 'bsd' ? 'BSD' : 'SStats'}: ${priorMessage}`);
@@ -413,8 +416,8 @@ async function runSource(name, fn) {
 async function buildData() {
   date = new Date().toISOString().slice(0, 10);
   errors.length = 0;
-  sourceStatus.bsd = { ok: false, count: 0, message: '' };
-  sourceStatus.sstats = { ok: false, count: 0, message: '' };
+  sourceStatus.bsd = { ok: false, count: 0, message: '', diagnostic: '' };
+  sourceStatus.sstats = { ok: false, count: 0, message: '', diagnostic: '' };
   const [bsd, sstats] = await Promise.all([runSource('bsd', fetchBSD), runSource('sstats', fetchSStats)]);
   const predictions = [...bsd, ...sstats]
     .filter(row => row.time && dateKey(row.time) === date)
