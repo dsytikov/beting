@@ -1,0 +1,13 @@
+{
+  "name": "beting-football-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Football predictions dashboard and server-side API data collector",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "build:data": "node scripts/build-data.js"
+  }
+}
