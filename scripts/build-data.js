@@ -31,7 +31,7 @@ function safeError(error) {
   return String(error?.message || error).replace(/https?:\/\/\S+/g, '[API URL]').slice(0, 220);
 }
 async function getJson(url, headers = {}) {
-  const response = await fetch(url, { headers, signal: AbortSignal.timeout(25000) });
+  const response = await fetch(url, { headers, signal: AbortSignal.timeout(7000) });
   const body = await response.text();
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${body.slice(0, 160)}`);
   try { return JSON.parse(body); } catch { throw new Error('API вернул не JSON'); }
