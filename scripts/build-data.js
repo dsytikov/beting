@@ -459,11 +459,7 @@ function normalizeBsd(event, prediction, leagueNames = new Map()) {
     over25 !== null ? `ТМ 2.5: ${percentUnder(over25)}` : lambda !== null ? `ТМ 2.5 Poisson: ${percent(1 - poissonOver(lambda, 2))}` : null,
     over35 !== null ? `ТМ 3.5: ${percentUnder(over35)}` : lambda !== null ? `ТМ 3.5 Poisson: ${percent(1 - poissonOver(lambda, 3))}` : null
   ].filter(Boolean);
-  const underGoalParts = [
-    over15 !== null ? `ТМ 1.5: ${percentUnder(over15)}` : lambda !== null ? `ТМ 1.5 Poisson: ${percent(1 - poissonOver(lambda, 1))}` : null,
-    over25 !== null ? `ТМ 2.5: ${percentUnder(over25)}` : lambda !== null ? `ТМ 2.5 Poisson: ${percent(1 - poissonOver(lambda, 2))}` : null,
-    over35 !== null ? `ТМ 3.5: ${percentUnder(over35)}` : lambda !== null ? `ТМ 3.5 Poisson: ${percent(1 - poissonOver(lambda, 3))}` : null
-  ].filter(Boolean);
+  
   const cardParts = [
     card25 !== null ? `ТБ 2.5: ${percent(card25)}` : null,
     card35 !== null ? `ТБ 3.5: ${percent(card35)}` : null
