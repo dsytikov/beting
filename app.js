@@ -1,4 +1,4 @@
-/* Football predictions UI. The Render server refreshes data.json from the API providers. */
+/* Football predictions UI. Vercel serves this static UI and the Node.js /api/data function. */
 const $ = (id) => document.getElementById(id);
 let allPredictions = [];
 let sortKey = 'time';
@@ -76,11 +76,11 @@ async function loadAll(requestRefresh = false) {
   $('status-sstats').textContent = 'SStats: загрузка…';
   try {
     if (requestRefresh) {
-      const refreshResponse = await fetch('/api/refresh', { method: 'POST' });
+      const refreshResponse = await fetch('/api/data', { method: 'POST' });
       const refreshResult = await refreshResponse.json().catch(() => ({}));
       if (!refreshResponse.ok) throw new Error(refreshResult.message || 'Не удалось обновить прогнозы.');
     }
-    const response = await fetch(`/data.json?t=${Date.now()}`, { cache: 'no-store' });
+    const response = await fetch(`/api/data?t=${Date.now()}`, { cache: 'no-store' });
     if (!response.ok) throw new Error(`Не удалось загрузить data.json (HTTP ${response.status})`);
     const data = await response.json();
     allPredictions = Array.isArray(data.predictions) ? data.predictions : [];
