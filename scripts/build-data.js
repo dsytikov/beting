@@ -150,7 +150,7 @@ function normalizeBsd(event, prediction, leagueNames = new Map()) {
     ? `П1 ${probHome ?? '—'} / X ${probDraw ?? '—'} / П2 ${probAway ?? '—'}`
     : '—';
   const outcome = predicted
-    ? ({ home: 'П1', homewin: 'П1', '1': 'П1', draw: 'X', tie: 'X', away: 'П2', awaywin: 'П2', '2': 'П2' })[String(predicted).toLowerCase()] || String(predicted)
+    ? ({ home: 'П1', homewin: 'П1', h: 'П1', '1': 'П1', draw: 'X', tie: 'X', d: 'X', away: 'П2', awaywin: 'П2', a: 'П2', '2': 'П2' })[String(predicted).toLowerCase()] || String(predicted)
     : hasResultProbs
       ? `П1 ${probHome ?? '—'} / X ${probDraw ?? '—'} / П2 ${probAway ?? '—'}`
       : '—';
@@ -232,7 +232,7 @@ function normalizeSstats(game, glicko = null, leagueNames = new Map()) {
   );
   const hasProbs = [homeProb, drawProb, awayProb].some(v => v !== null && Number.isFinite(Number(v)));
   const outcome = winner
-    ? ({ home: 'П1', homewin: 'П1', '1': 'П1', draw: 'X', tie: 'X', away: 'П2', awaywin: 'П2', '2': 'П2' })[String(winner).toLowerCase()] || String(winner)
+    ? ({ home: 'П1', homewin: 'П1', h: 'П1', '1': 'П1', draw: 'X', tie: 'X', d: 'X', away: 'П2', awaywin: 'П2', a: 'П2', '2': 'П2' })[String(winner).toLowerCase()] || String(winner)
     : hasProbs ? `П1 ${percent(homeProb) ?? '—'} / X ${percent(drawProb) ?? '—'} / П2 ${percent(awayProb) ?? '—'}` : '—';
   const probabilityOutcome = hasProbs
     ? `П1 ${percent(homeProb) ?? '—'} / X ${percent(drawProb) ?? '—'} / П2 ${percent(awayProb) ?? '—'}`
