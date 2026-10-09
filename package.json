@@ -4,10 +4,11 @@
   "private": true,
   "description": "Football predictions dashboard and server-side API data collector",
   "engines": {
-    "node": ">=20"
+    "node": "22.x"
   },
   "scripts": {
     "start": "node server.js",
-    "build:data": "node scripts/build-data.js"
+    "build:data": "node scripts/build-data.js",
+    "test": "node --check api/health.js && node --check api/data.js && node --check scripts/build-data.js && node scripts/smoke-test.js"
   }
 }
