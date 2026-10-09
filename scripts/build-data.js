@@ -433,20 +433,34 @@ async function fetchSStats() {
   const token = process.env.SSTATS_TOKEN || '';
   if (!token) throw new Error('Не задан SSTATS_TOKEN в Environment Variables Vercel');
   const apiKey = `apikey=${encodeURIComponent(token)}`;
-  // Try the documented single-date filter first; some API deployments respond more reliably to From/To.
+  // Try Date first, but also fall back when it returns HTTP 200 with an empty
+  // result. An empty JSON response is not a request error, so catch-only fallback
+  // would otherwise leave SStats with zero matches.
   let gamesPayload;
   let firstError;
+  let dateQueryCount = 0;
   try {
     const params = new URLSearchParams({ Date: date, Limit: '200', Offset: '0', apikey: token });
     gamesPayload = await getJson(`${SSTATS_BASE}/games/list?${params}`, {}, 4300);
+    dateQueryCount = arr(gamesPayload).length;
   } catch (error) {
     firstError = error;
+  }
+
+  if (firstError || dateQueryCount === 0) {
     try {
       const params = new URLSearchParams({ From: date, To: date, Limit: '200', Offset: '0', apikey: token });
-      gamesPayload = await getJson(`${SSTATS_BASE}/games/list?${params}`, {}, 4000);
-      sourceStatus.sstats.diagnostic = `SStats: основной фильтр Date не ответил, сработал запасной From/To (${safeError(firstError)})`;
+      const fallbackPayload = await getJson(`${SSTATS_BASE}/games/list?${params}`, {}, 4000);
+      const fallbackCount = arr(fallbackPayload).length;
+      if (fallbackCount > 0 || !gamesPayload) gamesPayload = fallbackPayload;
+      sourceStatus.sstats.diagnostic = firstError
+        ? `SStats: фильтр Date завершился ошибкой, проверен запасной From/To (${safeError(firstError)})`
+        : `SStats: фильтр Date вернул 0 матчей; проверен запасной From/To (ответ Date: 0, From/To: ${fallbackCount})`;
     } catch (fallbackError) {
-      throw new Error(`games/list Date: ${safeError(firstError)}; From/To: ${safeError(fallbackError)}`);
+      if (firstError) {
+        throw new Error(`games/list Date: ${safeError(firstError)}; From/To: ${safeError(fallbackError)}`);
+      }
+      sourceStatus.sstats.diagnostic = `SStats: Date вернул 0 матчей; запрос From/To завершился ошибкой: ${safeError(fallbackError)}`;
     }
   }
   const games = arr(gamesPayload);
