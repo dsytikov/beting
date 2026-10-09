@@ -36,7 +36,7 @@ async function main() {
   try {
     const dataRes = responseMock();
     await data({ method: 'GET', query: {} }, dataRes);
-    assert.equal(dataRes.statusCode, 200);
+    assert.equal(dataRes.statusCode, 503);
     assert.ok(Array.isArray(dataRes.payload.predictions));
     assert.equal(dataRes.payload.sources.bsd.ok, false);
     assert.equal(dataRes.payload.sources.sstats.ok, false);
