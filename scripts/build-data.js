@@ -439,23 +439,29 @@ async function fetchSStats() {
   let gamesPayload;
   let firstError;
   let dateQueryCount = 0;
+  let dateQueryHasTargetDate = false;
   try {
     const params = new URLSearchParams({ Date: date, Limit: '200', Offset: '0', apikey: token });
     gamesPayload = await getJson(`${SSTATS_BASE}/games/list?${params}`, {}, 4300);
-    dateQueryCount = arr(gamesPayload).length;
+    const dateGames = arr(gamesPayload);
+    dateQueryCount = dateGames.length;
+    dateQueryHasTargetDate = dateGames.some(game => {
+      const raw = pick(game, 'Date', 'DateTime', 'eventDate', 'StartTime', 'Kickoff', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start');
+      return !raw || dateKey(raw) === date;
+    });
   } catch (error) {
     firstError = error;
   }
 
-  if (firstError || dateQueryCount === 0) {
+  if (firstError || dateQueryCount === 0 || !dateQueryHasTargetDate) {
     try {
       const params = new URLSearchParams({ From: date, To: date, Limit: '200', Offset: '0', apikey: token });
       const fallbackPayload = await getJson(`${SSTATS_BASE}/games/list?${params}`, {}, 4000);
       const fallbackCount = arr(fallbackPayload).length;
-      if (fallbackCount > 0 || !gamesPayload) gamesPayload = fallbackPayload;
+      gamesPayload = fallbackPayload;
       sourceStatus.sstats.diagnostic = firstError
         ? `SStats: фильтр Date завершился ошибкой, проверен запасной From/To (${safeError(firstError)})`
-        : `SStats: фильтр Date вернул 0 матчей; проверен запасной From/To (ответ Date: 0, From/To: ${fallbackCount})`;
+        : `SStats: фильтр Date не дал подходящих матчей (получено: ${dateQueryCount}); проверен запасной From/To (получено: ${fallbackCount})`;
     } catch (fallbackError) {
       if (firstError) {
         throw new Error(`games/list Date: ${safeError(firstError)}; From/To: ${safeError(fallbackError)}`);
