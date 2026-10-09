@@ -438,6 +438,8 @@ async function fetchSStats() {
   const apiKey = `apikey=${encodeURIComponent(token)}`;
   // Run several lightweight list queries in parallel: the Date filter can hang,
   // while From/To may return a valid envelope with count=0. Prefer exact-date rows.
+  // Fetch optional league metadata in parallel with the game-list queries to stay within Vercel's time budget.
+  const leaguesPromise = getJson(`${SSTATS_BASE}/leagues?${apiKey}`, {}, 1800).catch(() => null);
   const querySpecs = [
     { label: 'Date', query: { Date: date } },
     { label: 'Today', query: { Today: 'true' } },
@@ -478,10 +480,7 @@ async function fetchSStats() {
     : item.label + ': status=' + (item.status ?? '—') + ', count=' + item.count + ', строк=' + item.rows.length + ', совпало по дате=' + item.matching.length + (item.message ? ', message=' + String(item.message).slice(0, 100) : '') + ', ключи=' + (item.keys.join(',') || 'массив/не объект')).join('; ');
   sourceStatus.sstats.diagnostic = 'SStats: ' + attemptSummary;
   const games = arr(gamesPayload);
-  let leaguesPayload = null;
-  try {
-    leaguesPayload = await getJson(`${SSTATS_BASE}/leagues?${apiKey}`, {}, 1800);
-  } catch { /* League names are optional; match data should still load. */ }
+  const leaguesPayload = await leaguesPromise;
   const leaguesResult = { status: leaguesPayload ? 'fulfilled' : 'rejected', value: leaguesPayload };
   const leagueNames = new Map();
   if (leaguesResult.status === 'fulfilled') {
