@@ -174,6 +174,14 @@ function normalizeBsd(event, prediction, leagueNames = new Map()) {
     pick(sourceEvent, 'eventDate', 'startTime', 'kickoff', 'date', 'dateTime', 'matchDate', 'start'),
     pick(sourcePrediction, 'eventDate', 'startTime', 'kickoff', 'date', 'dateTime', 'matchDate', 'start')
   );
+  const homeScore = first(pick(sourceEvent, 'home_score', 'homeScore', 'scoreHome', 'homeGoals', 'goalsHome'), pick(sourceEvent.score || {}, 'home', 'homeScore', 'home_score'));
+  const awayScore = first(pick(sourceEvent, 'away_score', 'awayScore', 'scoreAway', 'awayGoals', 'goalsAway'), pick(sourceEvent.score || {}, 'away', 'awayScore', 'away_score'));
+  const matchStatus = String(first(pick(sourceEvent, 'status', 'matchStatus', 'match_status', 'state'), '')).toLowerCase();
+  const isLive = ['inprogress', 'in_progress', 'live', '1h', '2h', 'ht', 'half_time', 'halftime'].includes(matchStatus);
+  const isFinished = ['finished', 'complete', 'completed', 'ft', 'full_time', 'fulltime', 'ended'].includes(matchStatus);
+  const actualResult = homeScore !== null && awayScore !== null
+    ? `${isLive ? 'LIVE · ' : isFinished ? 'ФТ · ' : ''}${homeScore}:${awayScore}`
+    : isLive ? 'Матч идёт' : isFinished ? 'Завершён' : '—';
   const home = first(pick(sourceEvent, 'homeTeam', 'home', 'teamHome', 'localTeam', 'homeTeamName'), pick(sourcePrediction, 'homeTeam', 'home', 'teamHome'));
   const away = first(pick(sourceEvent, 'awayTeam', 'away', 'teamAway', 'visitorTeam', 'awayTeamName'), pick(sourcePrediction, 'awayTeam', 'away', 'teamAway'));
   const cornerParts = [
@@ -203,6 +211,7 @@ function normalizeBsd(event, prediction, leagueNames = new Map()) {
     league: leagueNameFor(sourceEvent, leagueNames),
     home: teamName(home),
     away: teamName(away),
+    actualResult,
     outcome,
     probabilityOutcome,
     totalGoals: goalParts.join(' / ') || (xgHome !== null || xgAway !== null ? `xG ${xgHome ?? '—'}–${xgAway ?? '—'}` : '—'),
@@ -217,6 +226,14 @@ function normalizeSstats(game, glicko = null, leagueNames = new Map()) {
   const prediction = first(game.prediction, game.predictions, game.Prediction, detail.prediction, detail.predictions, detail, game) || game;
   const markets = first(prediction.markets, prediction.Markets, prediction.predictions, prediction.Predictions, {}) || {};
   const dateTime = first(pick(game, 'Date', 'DateTime', 'eventDate', 'startTime', 'Kickoff', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start'));
+  const homeScore = first(pick(game, 'HomeScore', 'homeScore', 'home_score', 'ScoreHome', 'homeGoals', 'goalsHome'), pick(game.Score || game.score || {}, 'home', 'homeScore', 'home_score'));
+  const awayScore = first(pick(game, 'AwayScore', 'awayScore', 'away_score', 'ScoreAway', 'awayGoals', 'goalsAway'), pick(game.Score || game.score || {}, 'away', 'awayScore', 'away_score'));
+  const matchStatus = String(first(pick(game, 'Status', 'status', 'MatchStatus', 'matchStatus', 'state'), '')).toLowerCase();
+  const isLive = ['inprogress', 'in_progress', 'live', '1h', '2h', 'ht', 'half_time', 'halftime'].includes(matchStatus);
+  const isFinished = ['finished', 'complete', 'completed', 'ft', 'full_time', 'fulltime', 'ended'].includes(matchStatus);
+  const actualResult = homeScore !== null && awayScore !== null
+    ? `${isLive ? 'LIVE · ' : isFinished ? 'ФТ · ' : ''}${homeScore}:${awayScore}`
+    : isLive ? 'Матч идёт' : isFinished ? 'Завершён' : '—';
   const home = first(pick(game, 'HomeTeamName', 'homeTeamName', 'homeTeam', 'home', 'HomeTeam', 'teamHome'), pick(game.HomeTeam || {}, 'name', 'Name', 'teamName'));
   const away = first(pick(game, 'AwayTeamName', 'awayTeamName', 'awayTeam', 'away', 'AwayTeam', 'teamAway'), pick(game.AwayTeam || {}, 'name', 'Name', 'teamName'));
   const homeProb = first(
@@ -293,6 +310,7 @@ function normalizeSstats(game, glicko = null, leagueNames = new Map()) {
     league,
     home: teamName(home),
     away: teamName(away),
+    actualResult,
     outcome,
     probabilityOutcome,
     totalGoals: goalParts.join(' / ') || (xgHome !== null || xgAway !== null ? `xG сумма: ${(Number(xgHome || 0) + Number(xgAway || 0)).toFixed(2)}` : '—'),
