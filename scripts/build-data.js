@@ -238,7 +238,8 @@ async function fetchSStats() {
   }).map(game => {
     const leagueId = first(game.LeagueId, game.leagueId, game.LeagueID);
     const normalized = normalizeSstats(game);
-    if (normalized.league === '—' && leagueId !== null && leagueNames.has(String(leagueId))) {
+    if (leagueId !== null && leagueNames.has(String(leagueId)) &&
+        (normalized.league === '—' || String(normalized.league) === String(leagueId) || /^\d+$/.test(String(normalized.league)))) {
       normalized.league = leagueNames.get(String(leagueId));
     }
     return normalized;
