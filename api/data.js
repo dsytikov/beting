@@ -7,6 +7,12 @@ let cachedData = null;
 let cachedAt = 0;
 let inFlight = null;
 
+function sendJson(res, statusCode, payload) {
+  res.statusCode = statusCode;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  return res.end(JSON.stringify(payload));
+}
+
 function unavailableData(message) {
   const now = new Date();
   return {
@@ -34,18 +40,17 @@ async function refreshData() {
 }
 
 module.exports = async function handler(req, res) {
-  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
 
   if (req.method !== 'GET' && req.method !== 'POST') {
     res.setHeader('Allow', 'GET, POST');
-    return res.status(405).json({ ok: false, message: 'Method not allowed' });
+    return sendJson(res, 405, { ok: false, message: 'Method not allowed' });
   }
 
   const forceRefresh = req.method === 'POST' || req.query?.refresh === '1';
   if (!forceRefresh && cachedData && Date.now() - cachedAt < CACHE_TTL_MS) {
-    return res.status(200).json(cachedData);
+    return sendJson(res, 200, cachedData);
   }
 
   try {
@@ -56,10 +61,10 @@ module.exports = async function handler(req, res) {
         timer.unref?.();
       })
     ]);
-    return res.status(200).json(data);
+    return sendJson(res, 200, data);
   } catch (error) {
     const message = String(error?.message || error).slice(0, 220);
     console.error('[api/data] Refresh failed:', message);
-    return res.status(200).json(cachedData || unavailableData(message));
+    return sendJson(res, 200, cachedData || unavailableData(message));
   }
 };
