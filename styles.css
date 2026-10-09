@@ -31,8 +31,7 @@ body {
     background: var(--surface);
     padding: 12px 20px;
     border-bottom: 1px solid var(--border);
-    position: sticky;
-    top: 0;
+    position: relative;
     z-index: 10;
 }
 
@@ -155,6 +154,10 @@ th:nth-child(11), td:nth-child(11) { width: 5%; }
 thead { background: var(--surface-alt); }
 
 th {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--surface-alt);
     padding: 8px 7px;
     text-align: left;
     font-weight: 600;
@@ -229,20 +232,21 @@ footer a { color: var(--accent); text-decoration: none; }
 }
 
 
-/* Highlight the full match row if any displayed probability is strictly above 80%. */
+/* Row background is set from the strongest probability in JavaScript. */
 tbody tr.high-probability-row {
-    background: rgba(239, 68, 68, 0.18);
-    box-shadow: inset 4px 0 0 #ef4444;
+    transition: background-color 160ms ease;
 }
 
 tbody tr.high-probability-row td {
-    border-top-color: rgba(248, 113, 113, 0.5);
+    color: inherit;
+    border-top-color: rgba(20, 83, 45, 0.2);
 }
 
-tbody tr.high-probability-row .prediction-cell {
-    color: #fca5a5;
+tbody tr.high-probability-row .prediction-cell,
+tbody tr.high-probability-row .source-cell {
+    color: inherit;
 }
 
 tbody tr.high-probability-row:hover {
-    background: rgba(239, 68, 68, 0.27);
+    filter: brightness(0.96);
 }
