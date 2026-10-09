@@ -28,7 +28,7 @@ function requestWantsRefresh(req) {
 function safeMessage(error) {
   return String(error && error.message ? error.message : error)
     .replace(/https?:\/\/\S+/g, '[API URL]')
-    .replace(/(?:token|apikey|api_key|authorization)[=: ]+[^\s&]+/ig, '$1=[REDACTED]')
+    .replace(/(?:token|apikey|api_key|authorization)[=: ]+[^\s&]+/ig, '[REDACTED]')
     .slice(0, 220);
 }
 
