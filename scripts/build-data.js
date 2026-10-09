@@ -355,7 +355,8 @@ async function fetchBSD() {
         const payload = await getJson(`${BSD_BASE}/events/${encodeURIComponent(id)}/prediction/`, headers, 2500);
         const candidate = first(payload?.prediction, payload?.data?.prediction, payload?.data, payload);
         const unwrapped = first(candidate?.prediction, candidate?.data?.prediction, candidate?.data, candidate) || candidate;
-        if (unwrapped && (unwrapped.markets || unwrapped.Markets || unwrapped.predictions || unwrapped.Predictions || unwrapped.recommendations)) {
+        const hasProbabilityFields = pick(unwrapped, 'prob_home', 'prob_home_win', 'prob_draw', 'prob_away', 'prob_away_win', 'predicted_result', 'expected_home_goals') !== null;
+        if (unwrapped && (unwrapped.markets || unwrapped.Markets || unwrapped.predictions || unwrapped.Predictions || unwrapped.recommendations || hasProbabilityFields)) {
           matchedPredictions[index] = unwrapped;
         }
       } catch { /* Some events do not have a prediction yet. */ }
