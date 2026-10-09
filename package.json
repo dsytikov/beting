@@ -9,6 +9,6 @@
   "scripts": {
     "start": "node server.js",
     "build:data": "node scripts/build-data.js",
-    "test": "node --check api/health.mjs && node --check api/data.mjs && node --check scripts/build-data.js && node scripts/smoke-test.js"
+    "test": "node --check api/health.js && node --check api/data.js && node --check scripts/build-data.js && node scripts/smoke-test.js"
   }
 }

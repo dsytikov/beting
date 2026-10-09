@@ -3,8 +3,8 @@
 
 const fs = require('node:fs');
 
-const BSD_BASE = 'https://sports.bzzoiro.com/api/v2';
-const SSTATS_BASE = 'https://api.sstats.net';
+const BSD_BASE = 'https://sports.bzzoiro.com/api/v2'; // Official football API v2 base URL
+const SSTATS_BASE = 'https://api.sstats.net'; // Official SStats API base URL
 let date = new Date().toISOString().slice(0, 10);
 const errors = [];
 const sourceStatus = {
@@ -55,7 +55,7 @@ function normalizeBsd(prediction) {
   const cornerLine = first(corners.prob_over_95, corners.prob_over_9_5, corners.prob_over_85);
   return {
     source: 'BSD',
-    time: first(event.start_time, event.kickoff, prediction.start_time, event.date),
+    time: first(event.event_date, event.start_time, event.kickoff, prediction.event_date, prediction.start_time, event.date),
     league: first(event.league?.name, event.competition?.name, event.league_name, '—'),
     home: first(event.home_team?.name, event.home_team, event.home, '—'),
     away: first(event.away_team?.name, event.away_team, event.away, '—'),
@@ -69,7 +69,7 @@ function normalizeBsd(prediction) {
 function normalizeSstats(game) {
   const prediction = game.prediction || game.predictions || game;
   const markets = prediction.markets || prediction.predictions || {};
-  const dateTime = first(game.date, game.startTime, game.start_time, game.kickoff, game.matchDate);
+  const dateTime = first(game.date, game.eventDate, game.event_date, game.startTime, game.start_time, game.kickoff, game.matchDate, game.match_date);
   return {
     source: 'SStats',
     time: dateTime,
@@ -93,7 +93,7 @@ async function fetchBSD() {
   if (predictions.length) return predictions.map(normalizeBsd);
   const eventsPayload = await getJson(`${BSD_BASE}/events/?${params}`, headers);
   return arr(eventsPayload).map(event => ({
-    source: 'BSD', time: first(event.start_time, event.date), league: first(event.league?.name, event.competition?.name, '—'),
+    source: 'BSD', time: first(event.event_date, event.start_time, event.date), league: first(event.league?.name, event.competition?.name, event.league_name, '—'),
     home: first(event.home_team?.name, event.home?.name, '—'), away: first(event.away_team?.name, event.away?.name, '—'),
     outcome: '—', totalGoals: '—', individualTotals: '—', corners: '—', yellowCards: '—'
   }));
@@ -101,10 +101,11 @@ async function fetchBSD() {
 async function fetchSStats() {
   const token = process.env.SSTATS_TOKEN || '';
   if (!token) throw new Error('Не задан SSTATS_TOKEN в GitHub Secrets/Variables');
-  const params = new URLSearchParams({ DateFrom: date, DateTo: date, apikey: token });
-  const payload = await getJson(`${SSTATS_BASE}/Games/list?${params}`);
+  const params = new URLSearchParams({ Year: date.slice(0, 4), apikey: token });
+  // SStats documents /games/list with Year (and optional LeagueId); filter to today's matches below.
+  const payload = await getJson(`${SSTATS_BASE}/games/list?${params}`);
   return arr(payload).filter(game => {
-    const raw = first(game.date, game.startTime, game.start_time, game.kickoff, game.matchDate);
+    const raw = first(game.date, game.eventDate, game.event_date, game.startTime, game.start_time, game.kickoff, game.matchDate, game.match_date);
     if (!raw) return false;
     return String(raw).slice(0, 10) === date;
   }).map(normalizeSstats);

@@ -2,15 +2,26 @@
 
 const assert = require('node:assert/strict');
 
-async function main() {
-  const { default: health } = await import('../api/health.mjs');
-  const { default: data } = await import('../api/data.mjs');
+function responseMock() {
+  return {
+    statusCode: 200,
+    headers: {},
+    payload: undefined,
+    setHeader(name, value) { this.headers[name.toLowerCase()] = value; },
+    status(code) { this.statusCode = code; return this; },
+    json(value) { this.payload = value; return this; }
+  };
+}
 
-  const healthResponse = await health.fetch(new Request('https://example.test/api/health'));
-  assert.equal(healthResponse.status, 200);
-  const healthPayload = await healthResponse.json();
-  assert.equal(healthPayload.ok, true);
-  assert.equal(healthPayload.runtime, 'nodejs');
+async function main() {
+  const health = require('../api/health');
+  const data = require('../api/data');
+
+  const healthRes = responseMock();
+  health({ method: 'GET' }, healthRes);
+  assert.equal(healthRes.statusCode, 200);
+  assert.equal(healthRes.payload.ok, true);
+  assert.equal(healthRes.payload.runtime, 'nodejs');
 
   const oldBsd = process.env.BSD_TOKEN;
   const oldSstats = process.env.SSTATS_TOKEN;
@@ -18,13 +29,13 @@ async function main() {
   delete process.env.SSTATS_TOKEN;
 
   try {
-    const dataResponse = await data.fetch(new Request('https://example.test/api/data'));
-    assert.equal(dataResponse.status, 200);
-    const dataPayload = await dataResponse.json();
-    assert.ok(Array.isArray(dataPayload.predictions));
-    assert.equal(dataPayload.sources.bsd.ok, false);
-    assert.equal(dataPayload.sources.sstats.ok, false);
-    assert.ok(Array.isArray(dataPayload.errors));
+    const dataRes = responseMock();
+    await data({ method: 'GET', query: {} }, dataRes);
+    assert.equal(dataRes.statusCode, 200);
+    assert.ok(Array.isArray(dataRes.payload.predictions));
+    assert.equal(dataRes.payload.sources.bsd.ok, false);
+    assert.equal(dataRes.payload.sources.sstats.ok, false);
+    assert.ok(Array.isArray(dataRes.payload.errors));
   } finally {
     if (oldBsd === undefined) delete process.env.BSD_TOKEN;
     else process.env.BSD_TOKEN = oldBsd;
@@ -32,7 +43,7 @@ async function main() {
     else process.env.SSTATS_TOKEN = oldSstats;
   }
 
-  console.log('Smoke tests passed: ESM /api/health and /api/data handlers return valid JSON.');
+  console.log('Smoke tests passed: CommonJS /api/health and /api/data handlers return valid JSON.');
 }
 
 main().catch((error) => {
