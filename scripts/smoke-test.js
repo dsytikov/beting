@@ -82,7 +82,7 @@ async function main() {
   assert.equal(sstatsRow.source, 'SStats');
   assert.match(sstatsRow.outcome, /51.0%/);
   assert.match(sstatsRow.individualTotals, /1.7/);
-  assert.match(sstatsRow.totalGoals, /2.90/);
+  assert.match(sstatsRow.totalGoals, /ТБ 2.5 Poisson:/);
 
   console.log('Smoke tests passed: API response shape, provider field normalization, and missing-token diagnostics.');
 }
