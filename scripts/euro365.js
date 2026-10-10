@@ -9,6 +9,7 @@ let cachedDate = '';
 let lastAttemptAt = 0;
 let dictionaryCache = null;
 let dictionaryAt = 0;
+let lastDiagnostics = 'Euro365: диагностика ещё не запускалась';
 
 function obj(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
@@ -185,6 +186,7 @@ async function fetchEuro365(targetDate) {
     throw new Error('Euro365: обновление ограничено до одного раза в минуту для соблюдения лимита API');
   }
   lastAttemptAt = now;
+  const diagnostics = { targetDate, live: 0, prematch: 0, unique: 0, targetDateEvents: 0, oddsEvents: 0, rows: 0, errors: [] };
   const key = process.env.EURO365_API_KEY || '';
   if (!key) throw new Error('Не задан EURO365_API_KEY в Environment Variables Vercel');
   const [liveResult, prematchResult, scoresResult] = await Promise.allSettled([
@@ -193,10 +195,16 @@ async function fetchEuro365(targetDate) {
     requestJson('/v1/scores', 3000)
   ]);
   const eventMap = new Map();
-  for (const result of [liveResult, prematchResult]) {
-    if (result.status !== 'fulfilled') continue;
-    for (const [id, event] of eventEntries(result.value)) eventMap.set(id, event);
+  for (const [name, result] of [['live', liveResult], ['prematch', prematchResult]]) {
+    if (result.status !== 'fulfilled') {
+      diagnostics.errors.push(name + ': ' + String(result.reason?.message || result.reason));
+      continue;
+    }
+    const entries = eventEntries(result.value);
+    diagnostics[name] = entries.length;
+    for (const [id, event] of entries) eventMap.set(id, event);
   }
+  diagnostics.unique = eventMap.size;
   if (!eventMap.size) {
     const failures = [];
     if (liveResult.status === 'rejected') failures.push('live: ' + liveResult.reason.message);
@@ -225,7 +233,9 @@ async function fetchEuro365(targetDate) {
       return aLive - bLive || dateFromEvent(a[1]) - dateFromEvent(b[1]);
     })
     .slice(0, 100);
+  diagnostics.targetDateEvents = targetEvents.length;
   if (!targetEvents.length) {
+    lastDiagnostics = `Euro365: live=${diagnostics.live}, prematch=${diagnostics.prematch}, уникальных=${diagnostics.unique}, за ${targetDate}=0${diagnostics.errors.length ? '; ошибки: ' + diagnostics.errors.join(' | ') : ''}`;
     cachedRows = [];
     cachedDate = targetDate;
     cachedAt = Date.now();
@@ -235,11 +245,16 @@ async function fetchEuro365(targetDate) {
   const ids = targetEvents.map(([id]) => id);
   const oddsPayload = await requestJson('/v1/odds?ids=' + encodeURIComponent(ids.join(',')), 4500);
   const oddsData = obj(unwrapData(oddsPayload));
+  diagnostics.oddsEvents = Object.keys(oddsData).length;
   const rows = targetEvents.map(([id, event]) => normalizeEuro365(id, event, oddsData[id], dictionary, targetDate)).filter(Boolean);
+  diagnostics.rows = rows.length;
+  lastDiagnostics = `Euro365: live=${diagnostics.live}, prematch=${diagnostics.prematch}, уникальных=${diagnostics.unique}, за ${targetDate}=${diagnostics.targetDateEvents}, odds=${diagnostics.oddsEvents}, строк=${diagnostics.rows}${diagnostics.errors.length ? '; ошибки: ' + diagnostics.errors.join(' | ') : ''}`;
   cachedRows = rows;
   cachedDate = targetDate;
   cachedAt = Date.now();
   return cachedRows;
 }
 
-module.exports = { fetchEuro365, normalizeEuro365, impliedProbabilities, normalizeDictionary };
+function getEuro365Diagnostics() { return lastDiagnostics; }
+
+module.exports = { fetchEuro365, getEuro365Diagnostics, normalizeEuro365, impliedProbabilities, normalizeDictionary };
