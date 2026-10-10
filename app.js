@@ -108,7 +108,7 @@ function renderTable() {
     .filter((item) => item.maxProbability >= MIN_DISPLAY_PROBABILITY)
     .filter((item) => activeSource === 'all' || item.source === activeSource);
   const rows = sortPredictions(qualified);
-  const sourceLabel = activeSource === 'BSD' ? 'BSD' : activeSource === 'SStats' ? 'S-Stats' : '';
+  const sourceLabel = activeSource === 'BSD' ? 'BSD' : activeSource === 'SStats' ? 'S-Stats' : activeSource === 'Euro365' ? 'Euro365' : '';
   $('empty-state').textContent = `Нет матчей${sourceLabel ? ` из источника ${sourceLabel}` : ''} с вероятностью 80% или выше.`;
   $('empty-state').classList.toggle('hidden', rows.length > 0);
   for (const item of rows) {
@@ -151,6 +151,7 @@ async function loadAll(requestRefresh = false) {
   errorBox.classList.add('hidden');
   $('status-bsd').textContent = 'BSD: загрузка…';
   $('status-sstats').textContent = 'SStats: загрузка…';
+  $('status-euro365').textContent = 'Euro365: загрузка…';
   try {
     if (requestRefresh) {
       const refreshResponse = await fetch('/api/data', { method: 'POST' });
@@ -163,6 +164,7 @@ async function loadAll(requestRefresh = false) {
     allPredictions = Array.isArray(data.predictions) ? data.predictions : [];
     setSourceStatus('status-bsd', 'BSD', data.sources?.bsd);
     setSourceStatus('status-sstats', 'SStats', data.sources?.sstats);
+    setSourceStatus('status-euro365', 'Euro365', data.sources?.euro365);
     const generatedAt = data.generatedAt ? new Date(data.generatedAt) : null;
     $('current-date').textContent = generatedAt && !Number.isNaN(generatedAt.getTime())
       ? `Матчи на ${data.date || 'сегодня'} · обновлено ${generatedAt.toLocaleString('ru-RU')}`
