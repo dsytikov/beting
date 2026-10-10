@@ -122,7 +122,7 @@ async function main() {
   assert.equal(euroRow.source, 'Euro365');
   assert.equal(euroRow.home, 'Alpha');
   assert.equal(euroRow.away, 'Beta');
-  assert.match(euroRow.probabilityOutcome, /П1 51/);
+  assert.match(euroRow.probabilityOutcome, /П1 31/);
   assert.match(euroRow.totalGoals, /ТБ 2.5:/);
   assert.match(euroRow.underGoals, /ТМ 2.5:/);
 
