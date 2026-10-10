@@ -497,7 +497,7 @@ async function fetchSStats() {
   const attemptSummary = attempts.map(item => item.error
     ? item.label + ': timeout/ошибка ' + item.error
     : item.label + ': status=' + (item.status ?? '—') + ', count=' + item.count + ', строк=' + item.rows.length + ', совпало по дате=' + item.matching.length + (item.message ? ', message=' + String(item.message).slice(0, 100) : '') + ', ключи=' + (item.keys.join(',') || 'массив/не объект')).join('; ');
-  sourceStatus.sstats.diagnostic = 'SStats: ' + attemptSummary + liveListDiagnostic;
+  sourceStatus.sstats.diagnostic = 'SStats: ' + attemptSummary;
   let games = arr(gamesPayload);
   let todayGames = games.filter(game => {
     const raw = pick(game, 'Date', 'DateTime', 'eventDate', 'StartTime', 'StartDate', 'StartDateTime', 'GameDate', 'GameDateTime', 'UtcDate', 'DateUtc', 'DateLocal', 'Kickoff', 'KickoffTime', 'StartTimeUtc', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start');
