@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { normalizeBsd, normalizeSstats } = require('./build-data');
+const { normalizeBsd, normalizeSstats, normalizeFootballData } = require('./build-data');
 const { normalizeEuro365 } = require('./euro365');
 
 function responseMock() {
@@ -36,6 +36,8 @@ async function main() {
   delete process.env.SSTATS_TOKEN;
   const oldEuro365 = process.env.EURO365_API_KEY;
   delete process.env.EURO365_API_KEY;
+  const oldFdData = process.env.FD_DATA_TOKEN;
+  delete process.env.FD_DATA_TOKEN;
 
   try {
     const dataRes = responseMock();
@@ -45,6 +47,7 @@ async function main() {
     assert.equal(dataRes.payload.sources.bsd.ok, false);
     assert.equal(dataRes.payload.sources.sstats.ok, false);
     assert.equal(dataRes.payload.sources.euro365.ok, false);
+    assert.equal(dataRes.payload.sources.fbdata.ok, false);
     assert.ok(Array.isArray(dataRes.payload.errors));
 
     const dataMethodRes = responseMock();
@@ -57,6 +60,8 @@ async function main() {
     else process.env.SSTATS_TOKEN = oldSstats;
     if (oldEuro365 === undefined) delete process.env.EURO365_API_KEY;
     else process.env.EURO365_API_KEY = oldEuro365;
+    if (oldFdData === undefined) delete process.env.FD_DATA_TOKEN;
+    else process.env.FD_DATA_TOKEN = oldFdData;
   }
 
   const bsdRow = normalizeBsd(
@@ -108,6 +113,27 @@ async function main() {
   assert.match(sstatsRow.individualTotals, /1.7/);
   assert.match(sstatsRow.totalGoals, /ТБ 2.5 Poisson:/);
   assert.match(sstatsRow.underGoals, /ТМ 2.5 Poisson:/);
+
+
+  const footballHistory = [
+    { status: 'FINISHED', competition: { code: 'PL' }, homeTeam: { id: 1 }, awayTeam: { id: 3 }, score: { fullTime: { home: 2, away: 0 } } },
+    { status: 'FINISHED', competition: { code: 'PL' }, homeTeam: { id: 4 }, awayTeam: { id: 2 }, score: { fullTime: { home: 0, away: 1 } } },
+    { status: 'FINISHED', competition: { code: 'PL' }, homeTeam: { id: 1 }, awayTeam: { id: 5 }, score: { fullTime: { home: 3, away: 1 } } },
+    { status: 'FINISHED', competition: { code: 'PL' }, homeTeam: { id: 6 }, awayTeam: { id: 2 }, score: { fullTime: { home: 1, away: 2 } } }
+  ];
+  const footballRow = normalizeFootballData({
+    id: 999, utcDate: '2026-10-10T16:00:00Z', status: 'SCHEDULED',
+    competition: { code: 'PL', name: 'Premier League' },
+    homeTeam: { id: 1, shortName: 'Home' }, awayTeam: { id: 2, shortName: 'Away' },
+    score: { fullTime: { home: null, away: null } }
+  }, footballHistory);
+  assert.equal(footballRow.source, 'FB_DATA');
+  assert.equal(footballRow.league, 'Premier League');
+  assert.equal(footballRow.home, 'Home');
+  assert.equal(footballRow.away, 'Away');
+  assert.match(footballRow.probabilityOutcome, /П1 .*% \/ X .*% \/ П2 .*%/);
+  assert.match(footballRow.totalGoals, /ТБ 2.5:/);
+  assert.match(footballRow.underGoals, /ТМ 2.5:/);
 
   const euroRow = normalizeEuro365(
     's2-test.123',
