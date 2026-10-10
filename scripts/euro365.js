@@ -36,8 +36,13 @@ function dateFromEvent(event) {
     : new Date(raw);
   return Number.isNaN(date.getTime()) ? null : date;
 }
-function dayKey(date) {
-  return date ? date.toISOString().slice(0, 10) : null;
+function moscowDayKey(date) {
+  if (!date) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 function eventLeague(event) {
   const tournament = first(event.tournament, event.league, event.competition);
@@ -140,7 +145,7 @@ function marketProbabilities(oddsForEvent, dictionary, marketIds, lineKey, label
 }
 function normalizeEuro365(eventId, event, oddsForEvent, dictionary, targetDate) {
   const kickoff = dateFromEvent(event);
-  if (!kickoff || dayKey(kickoff) !== targetDate) return null;
+  if (!kickoff || moscowDayKey(kickoff) !== targetDate) return null;
   const home = first(event.h, event.home, event.home_name, event.homeTeam, event.home_team, '—');
   const away = first(event.a, event.away, event.away_name, event.awayTeam, event.away_team, '—');
   const marketNames = Object.entries(dictionary.markets).map(([id, name]) => [id, String(name).toLowerCase()]);
@@ -226,7 +231,7 @@ async function fetchEuro365(targetDate) {
     }
   }
   const targetEvents = [...eventMap.entries()]
-    .filter(([, event]) => dayKey(dateFromEvent(event)) === targetDate)
+    .filter(([, event]) => moscowDayKey(dateFromEvent(event)) === targetDate)
     .sort((a, b) => {
       const aLive = /live|progress|inplay/i.test(String(a[1].status || '')) ? 0 : 1;
       const bLive = /live|progress|inplay/i.test(String(b[1].status || '')) ? 0 : 1;
