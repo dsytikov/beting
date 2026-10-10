@@ -4,7 +4,7 @@ const fs = require('node:fs');
 
 const BSD_BASE = 'https://sports.bzzoiro.com/api/v2';
 const SSTATS_BASE = 'https://api.sstats.net';
-const { fetchEuro365 } = require('./euro365');
+const { fetchEuro365, getEuro365Diagnostics } = require('./euro365');
 let date = new Date().toISOString().slice(0, 10);
 const errors = [];
 const sourceStatus = {
@@ -591,7 +591,7 @@ async function runSource(name, fn) {
   try {
     const rows = await fn();
     const priorMessage = sourceStatus[name].message;
-    const diagnostic = sourceStatus[name].diagnostic || '';
+    const diagnostic = name === 'euro365' ? getEuro365Diagnostics() : (sourceStatus[name].diagnostic || '');
     sourceStatus[name] = {
       ok: true,
       count: rows.length,
