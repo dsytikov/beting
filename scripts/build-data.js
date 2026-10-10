@@ -441,14 +441,18 @@ async function fetchFootballData() {
   const today = new Date().toISOString().slice(0, 10);
   const historyFrom = new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10);
   const headers = { 'X-Auth-Token': token, Accept: 'application/json' };
-  const [todayPayload, historyPayload] = await Promise.all([
-    getJson(`https://api.football-data.org/v4/matches?dateFrom=${today}&dateTo=${today}`, headers, 6000),
-    getJson(`https://api.football-data.org/v4/matches?dateFrom=${historyFrom}&dateTo=${today}&status=FINISHED&limit=500`, headers, 7000)
-  ]);
-  const matches = arr(todayPayload?.matches ? todayPayload : todayPayload);
-  const history = arr(historyPayload?.matches ? historyPayload : historyPayload);
+  const todayPayload = await getJson(`https://api.football-data.org/v4/matches?dateFrom=${today}&dateTo=${today}`, headers, 6000);
+  let historyPayload = null;
+  let historyError = '';
+  try {
+    historyPayload = await getJson(`https://api.football-data.org/v4/matches?dateFrom=${historyFrom}&dateTo=${today}&status=FINISHED&limit=500`, headers, 7000);
+  } catch (error) {
+    historyError = safeError(error);
+  }
+  const matches = arr(todayPayload);
+  const history = arr(historyPayload);
   const todayMatches = matches.filter(match => match.utcDate && dateKey(match.utcDate) === today);
-  sourceStatus.fbdata.diagnostic = `Football-data.org: расписание ${todayMatches.length}, исторических матчей получено ${history.length}; вероятности рассчитаны по Пуассону на основе результатов за 120 дней`;
+  sourceStatus.fbdata.diagnostic = `Football-data.org: расписание ${todayMatches.length}, исторических матчей получено ${history.length}; вероятности рассчитаны по Пуассону на основе результатов за 120 дней${historyError ? `; история недоступна: ${historyError}; применены базовые средние` : ''}`;
   return todayMatches.map(match => normalizeFootballData(match, history));
 }
 
@@ -712,12 +716,12 @@ async function runSource(name, fn) {
       diagnostic
     };
     if (!rows.length) errors.push(`${name === 'bsd' ? 'BSD' : name === 'sstats' ? 'SStats' : name === 'fbdata' ? 'FB_DATA' : 'Euro365'}: ${sourceStatus[name].message}`);
-    else if (priorMessage) errors.push(`${name === 'bsd' ? 'BSD' : name === 'sstats' ? 'SStats' : 'Euro365'}: ${priorMessage}`);
+    else if (priorMessage) errors.push(`${name === 'bsd' ? 'BSD' : name === 'sstats' ? 'SStats' : name === 'fbdata' ? 'FB_DATA' : 'Euro365'}: ${priorMessage}`);
     return rows;
   } catch (error) {
     const message = safeError(error);
     sourceStatus[name] = { ok: false, count: 0, message };
-    errors.push(`${name === 'bsd' ? 'BSD' : name === 'sstats' ? 'SStats' : 'Euro365'}: ${message}`);
+    errors.push(`${name === 'bsd' ? 'BSD' : name === 'sstats' ? 'SStats' : name === 'fbdata' ? 'FB_DATA' : 'Euro365'}: ${message}`);
     return [];
   }
 }
@@ -755,7 +759,7 @@ if (require.main === module) {
   buildData().then(output => {
     fs.writeFileSync('data.json', JSON.stringify(output, null, 2) + '\n');
     console.log(`Generated data.json: ${output.predictions.length} rows; BSD=${output.sources.bsd.count}; SStats=${output.sources.sstats.count}`);
-    if (!output.sources.bsd.ok && !output.sources.sstats.ok && !output.sources.euro365.ok) {
+    if (!output.sources.bsd.ok && !output.sources.sstats.ok && !output.sources.euro365.ok && !output.sources.fbdata.ok) {
       console.warn('Both data sources failed; generated JSON contains diagnostic errors.');
     }
   }).catch(error => { console.error(error); process.exitCode = 1; });
