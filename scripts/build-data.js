@@ -82,6 +82,16 @@ function poissonOver(lambda, threshold) {
 function safeError(error) {
   return String(error?.message || error).replace(/https?:\/\/\S+/g, '[API URL]').slice(0, 220);
 }
+function moscowDateKey(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(parsed);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
 function dateKey(value) {
   if (value === undefined || value === null || value === '') return null;
   const raw = String(value).trim();
@@ -617,7 +627,7 @@ async function buildData() {
   const [bsd, sstats, euro365] = await Promise.all([
     runSource('bsd', fetchBSD),
     runSource('sstats', fetchSStats),
-    runSource('euro365', () => fetchEuro365(date))
+    runSource('euro365', () => fetchEuro365(moscowDateKey(new Date())))
   ]);
   const teamKey = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const bsdProbabilities = new Map();
@@ -631,7 +641,7 @@ async function buildData() {
     if (bsdProbability) row.probabilityOutcome = bsdProbability;
   }
   const predictions = [...bsd, ...sstats, ...euro365]
-    .filter(row => row.time && dateKey(row.time) === date)
+    .filter(row => row.time && (row.source === 'Euro365' ? moscowDateKey(row.time) === moscowDateKey(new Date()) : dateKey(row.time) === date))
     .sort((a, b) => new Date(a.time) - new Date(b.time));
   return { date, generatedAt: new Date().toISOString(), sources: sourceStatus, errors, predictions };
 }
