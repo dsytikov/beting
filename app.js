@@ -134,12 +134,14 @@ function renderTable() {
 function setSourceStatus(id, name, status) {
   const el = $(id);
   const count = Number(status?.count || 0);
+  el.title = status?.message || status?.diagnostic || '';
   if (status?.ok) {
     el.textContent = `${name}: ${count} матчей`;
     el.className = 'status-badge ok';
   } else {
     el.textContent = `${name}: нет данных`;
     el.className = 'status-badge error';
+    el.title = status?.message || status?.diagnostic || 'Подробности отсутствуют в ответе API';
   }
 }
 async function loadAll(requestRefresh = false) {
