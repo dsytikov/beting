@@ -40,7 +40,8 @@ function emptyResult(message) {
     sources: {
       bsd: { ok: false, count: 0, message },
       sstats: { ok: false, count: 0, message },
-      euro365: { ok: false, count: 0, message }
+      euro365: { ok: false, count: 0, message },
+      fbdata: { ok: false, count: 0, message }
     },
     errors: [message],
     predictions: []
