@@ -56,15 +56,18 @@ function doubleChanceProbabilities(value) {
 function preparePrediction(item) {
   const peak = maxProbability(item);
   const doubleChance = doubleChanceProbabilities(item.probabilityOutcome);
+  // Euro365 is a full match feed, not a list of pre-qualified picks:
+  // keep all its events and market probabilities visible.
+  const keepAllMarkets = item.source === 'Euro365';
   return {
     ...item,
     ...doubleChance,
     maxProbability: peak,
     probabilityOutcome: item.probabilityOutcome || '—',
-    totalGoals: filterProbabilityText(item.totalGoals),
-    underGoals: filterProbabilityText(item.underGoals),
-    individualTotals: filterProbabilityText(item.individualTotals),
-    corners: filterProbabilityText(item.corners)
+    totalGoals: keepAllMarkets ? (item.totalGoals || '—') : filterProbabilityText(item.totalGoals),
+    underGoals: keepAllMarkets ? (item.underGoals || '—') : filterProbabilityText(item.underGoals),
+    individualTotals: keepAllMarkets ? (item.individualTotals || '—') : filterProbabilityText(item.individualTotals),
+    corners: keepAllMarkets ? (item.corners || '—') : filterProbabilityText(item.corners)
   };
 }
 function sortPredictions(rows) {
@@ -105,17 +108,18 @@ function renderTable() {
   tbody.replaceChildren();
   const qualified = allPredictions
     .map(preparePrediction)
-    .filter((item) => item.maxProbability >= MIN_DISPLAY_PROBABILITY)
+    .filter((item) => item.maxProbability >= MIN_DISPLAY_PROBABILITY || item.source === 'Euro365')
     .filter((item) => activeSource === 'all' || item.source === activeSource);
   const rows = sortPredictions(qualified);
   const sourceLabel = activeSource === 'BSD' ? 'BSD' : activeSource === 'SStats' ? 'S-Stats' : activeSource === 'Euro365' ? 'Euro365' : '';
-  $('empty-state').textContent = `Нет матчей${sourceLabel ? ` из источника ${sourceLabel}` : ''} с вероятностью 80% или выше.`;
+  $('empty-state').textContent = `Нет матчей${sourceLabel ? ` из источника ${sourceLabel}` : ''} для отображения.`;
   $('empty-state').classList.toggle('hidden', rows.length > 0);
   for (const item of rows) {
     const tr = document.createElement('tr');
-    tr.classList.add('high-probability-row');
-    tr.style.backgroundColor = heatmapColor(item.maxProbability);
-    tr.style.color = item.maxProbability >= 93 ? '#f8fafc' : '#10251a';
+    const isHighProbability = item.maxProbability >= MIN_DISPLAY_PROBABILITY;
+    if (isHighProbability) tr.classList.add('high-probability-row');
+    tr.style.backgroundColor = isHighProbability ? heatmapColor(item.maxProbability) : '';
+    tr.style.color = isHighProbability && item.maxProbability >= 93 ? '#f8fafc' : '';
     tr.title = `Максимальная вероятность: ${item.maxProbability.toFixed(1)}%`;
     addCell(tr, formatTime(item.time));
     addCell(tr, item.league);
