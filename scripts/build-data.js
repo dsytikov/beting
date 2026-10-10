@@ -559,8 +559,9 @@ async function fetchSStats() {
     const sampleDate = sample && typeof sample === 'object'
       ? pick(sample, 'Date', 'DateTime', 'eventDate', 'StartTime', 'StartDate', 'StartDateTime', 'GameDate', 'GameDateTime', 'UtcDate', 'DateUtc', 'DateLocal', 'Kickoff', 'KickoffTime', 'StartTimeUtc', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start')
       : null;
-    sourceStatus.sstats.diagnostic += liveListDiagnostic + '; итог: строк после разбора ' + games.length + ', после фильтра даты ' + todayGames.length + ', поля первого матча: ' + (sampleKeys || 'нет') + ', дата первого матча: ' + (sampleDate ?? 'не найдена');
+    sourceStatus.sstats.diagnostic += '; итог: строк после разбора ' + games.length + ', после фильтра даты ' + todayGames.length + ', поля первого матча: ' + (sampleKeys || 'нет') + ', дата первого матча: ' + (sampleDate ?? 'не найдена');
   }
+  if (liveListDiagnostic) sourceStatus.sstats.diagnostic += liveListDiagnostic;
   // Glicko/xG is a separate documented endpoint, not part of /games/list.
   // Query it concurrently so the table gets actual model fields instead of empty placeholders.
   const glickoTargets = todayGames.slice(0, 10);
