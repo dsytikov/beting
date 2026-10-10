@@ -3,7 +3,7 @@
 const { buildData } = require('../scripts/build-data');
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
-const REQUEST_TIMEOUT_MS = 9300;
+const REQUEST_TIMEOUT_MS = 12500;
 let cachedData;
 let cachedAt = 0;
 let inFlight;
