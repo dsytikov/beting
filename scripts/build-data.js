@@ -497,8 +497,52 @@ async function fetchSStats() {
   const attemptSummary = attempts.map(item => item.error
     ? item.label + ': timeout/ошибка ' + item.error
     : item.label + ': status=' + (item.status ?? '—') + ', count=' + item.count + ', строк=' + item.rows.length + ', совпало по дате=' + item.matching.length + (item.message ? ', message=' + String(item.message).slice(0, 100) : '') + ', ключи=' + (item.keys.join(',') || 'массив/не объект')).join('; ');
-  sourceStatus.sstats.diagnostic = 'SStats: ' + attemptSummary;
-  const games = arr(gamesPayload);
+  sourceStatus.sstats.diagnostic = 'SStats: ' + attemptSummary + liveListDiagnostic;
+  let games = arr(gamesPayload);
+  let todayGames = games.filter(game => {
+    const raw = pick(game, 'Date', 'DateTime', 'eventDate', 'StartTime', 'StartDate', 'StartDateTime', 'GameDate', 'GameDateTime', 'UtcDate', 'DateUtc', 'DateLocal', 'Kickoff', 'KickoffTime', 'StartTimeUtc', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start');
+    return raw !== null && dateKey(raw) === date;
+  });
+
+  // The main /games/list endpoint can return an empty result for a valid date.
+  // Fall back to the documented Flashscore-backed endpoint, which supports Date and TimeZone filters.
+  let liveListDiagnostic = '';
+  if (!todayGames.length) {
+    try {
+      const lsUrl = `${SSTATS_BASE}/Ls/List?${new URLSearchParams({ Date: date, TimeZone: '3', Limit: '1000', Offset: '0', apikey: token })}`;
+      const lsPayload = await getJson(lsUrl, {}, 7500);
+      const lsRows = arr(lsPayload);
+      const canonicalRows = lsRows.map(item => {
+        const rawDate = first(pick(item, 'Date', 'DateTime', 'StartTime', 'StartDate', 'Kickoff', 'MatchDate', 'timestamp'));
+        const home = first(pick(item, 'HomeTeamName', 'homeTeamName', 'HomeTeam', 'homeTeam', 'home', 'teamHome'), pick(item.Home || item.home || {}, 'name', 'Name', 'teamName'));
+        const away = first(pick(item, 'AwayTeamName', 'awayTeamName', 'AwayTeam', 'awayTeam', 'away', 'teamAway'), pick(item.Away || item.away || {}, 'name', 'Name', 'teamName'));
+        const league = first(pick(item, 'LeagueName', 'leagueName', 'TournamentName', 'tournamentName', 'League', 'Tournament'), pick(item.League || item.league || item.Tournament || item.tournament || {}, 'name', 'Name', 'title'));
+        return {
+          ...item,
+          Id: first(pick(item, 'Id', 'GameId', 'gameId', 'id', 'FlashId', 'flashId')),
+          Date: rawDate,
+          HomeTeamName: home,
+          AwayTeamName: away,
+          LeagueName: league,
+          LeagueId: first(pick(item, 'LeagueId', 'leagueId', 'TournamentId', 'tournamentId'), pick(item.League || item.league || {}, 'id', 'Id')),
+          Status: first(pick(item, 'Status', 'status', 'MatchStatus', 'matchStatus')),
+          HomeScore: first(pick(item, 'HomeScore', 'homeScore', 'home_score'), pick(item.Home || item.home || {}, 'score', 'Score')),
+          AwayScore: first(pick(item, 'AwayScore', 'awayScore', 'away_score'), pick(item.Away || item.away || {}, 'score', 'Score'))
+        };
+      });
+      const lsToday = canonicalRows.filter(game => game.Date && dateKey(game.Date) === date);
+      if (lsToday.length) {
+        games = lsToday;
+        todayGames = lsToday;
+        liveListDiagnostic = `; fallback /Ls/List: найдено ${lsToday.length} матчей из ${lsRows.length} строк`;
+      } else {
+        liveListDiagnostic = `; fallback /Ls/List: строк ${lsRows.length}, совпало по дате 0, ключи первой строки ${lsRows[0] ? Object.keys(lsRows[0]).slice(0, 18).join(',') : 'нет строк'}`;
+      }
+    } catch (error) {
+      liveListDiagnostic = `; fallback /Ls/List: ${safeError(error)}`;
+    }
+  }
+
   const leaguesPayload = await leaguesPromise;
   const leaguesResult = { status: leaguesPayload ? 'fulfilled' : 'rejected', value: leaguesPayload };
   const leagueNames = new Map();
@@ -509,17 +553,13 @@ async function fetchSStats() {
       if (id !== null && name !== null) leagueNames.set(String(id), String(name));
     }
   }
-  const todayGames = games.filter(game => {
-    const raw = pick(game, 'Date', 'DateTime', 'eventDate', 'StartTime', 'StartDate', 'StartDateTime', 'GameDate', 'GameDateTime', 'UtcDate', 'DateUtc', 'DateLocal', 'Kickoff', 'KickoffTime', 'StartTimeUtc', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start');
-    return raw !== null && dateKey(raw) === date;
-  });
   if (!todayGames.length) {
     const sample = games[0];
     const sampleKeys = sample && typeof sample === 'object' ? Object.keys(sample).slice(0, 24).join(',') : typeof sample;
     const sampleDate = sample && typeof sample === 'object'
       ? pick(sample, 'Date', 'DateTime', 'eventDate', 'StartTime', 'StartDate', 'StartDateTime', 'GameDate', 'GameDateTime', 'UtcDate', 'DateUtc', 'DateLocal', 'Kickoff', 'KickoffTime', 'StartTimeUtc', 'MatchDate', 'gameDate', 'start', 'timestamp', 'date_start')
       : null;
-    sourceStatus.sstats.diagnostic += '; итог: строк после разбора ' + games.length + ', после фильтра даты ' + todayGames.length + ', поля первого матча: ' + (sampleKeys || 'нет') + ', дата первого матча: ' + (sampleDate ?? 'не найдена');
+    sourceStatus.sstats.diagnostic += liveListDiagnostic + '; итог: строк после разбора ' + games.length + ', после фильтра даты ' + todayGames.length + ', поля первого матча: ' + (sampleKeys || 'нет') + ', дата первого матча: ' + (sampleDate ?? 'не найдена');
   }
   // Glicko/xG is a separate documented endpoint, not part of /games/list.
   // Query it concurrently so the table gets actual model fields instead of empty placeholders.
