@@ -72,7 +72,7 @@ async function requestJson(path, timeoutMs = 4000) {
 }
 async function getDictionary() {
   if (dictionaryCache && Date.now() - dictionaryAt < DICTIONARY_TTL_MS) return dictionaryCache;
-  const payload = await requestJson('/v1/markets?sport=1&nested=1&lang=ru', 3500);
+  const payload = await requestJson('/v1/markets?sport=1&nested=1&lang=en', 3500);
   dictionaryCache = normalizeDictionary(payload);
   dictionaryAt = Date.now();
   return dictionaryCache;
