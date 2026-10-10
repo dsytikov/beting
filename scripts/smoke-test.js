@@ -2,6 +2,7 @@
 
 const assert = require('node:assert/strict');
 const { normalizeBsd, normalizeSstats } = require('./build-data');
+const { normalizeEuro365 } = require('./euro365');
 
 function responseMock() {
   return {
@@ -33,6 +34,8 @@ async function main() {
   const oldSstats = process.env.SSTATS_TOKEN;
   delete process.env.BSD_TOKEN;
   delete process.env.SSTATS_TOKEN;
+  const oldEuro365 = process.env.EURO365_API_KEY;
+  delete process.env.EURO365_API_KEY;
 
   try {
     const dataRes = responseMock();
@@ -41,6 +44,7 @@ async function main() {
     assert.ok(Array.isArray(dataRes.payload.predictions));
     assert.equal(dataRes.payload.sources.bsd.ok, false);
     assert.equal(dataRes.payload.sources.sstats.ok, false);
+    assert.equal(dataRes.payload.sources.euro365.ok, false);
     assert.ok(Array.isArray(dataRes.payload.errors));
 
     const dataMethodRes = responseMock();
@@ -51,6 +55,8 @@ async function main() {
     else process.env.BSD_TOKEN = oldBsd;
     if (oldSstats === undefined) delete process.env.SSTATS_TOKEN;
     else process.env.SSTATS_TOKEN = oldSstats;
+    if (oldEuro365 === undefined) delete process.env.EURO365_API_KEY;
+    else process.env.EURO365_API_KEY = oldEuro365;
   }
 
   const bsdRow = normalizeBsd(
@@ -102,6 +108,23 @@ async function main() {
   assert.match(sstatsRow.individualTotals, /1.7/);
   assert.match(sstatsRow.totalGoals, /ТБ 2.5 Poisson:/);
   assert.match(sstatsRow.underGoals, /ТМ 2.5 Poisson:/);
+
+  const euroRow = normalizeEuro365(
+    's2-test.123',
+    { ts: Math.floor(Date.parse('2026-10-10T15:00:00Z') / 1000), h: 'Alpha', a: 'Beta', t: [7, 'Test League', 1], live: false },
+    {
+      '1001': { s: { s: 0, '2001': [200, 0, null, 1], '2002': [350, 0, null, 1], '2003': [400, 0, null, 1] } },
+      '1018': { 's2.5': { s: 0, '2004': [180, 0, null, 1], '2005': [220, 0, null, 1] } }
+    },
+    { markets: { '1001': '1x2', '1018': 'Total Goals - Over / Under' }, outcomes: { '2001': '1', '2002': 'X', '2003': '2', '2004': 'Over', '2005': 'Under' }, full: {} },
+    '2026-10-10'
+  );
+  assert.equal(euroRow.source, 'Euro365');
+  assert.equal(euroRow.home, 'Alpha');
+  assert.equal(euroRow.away, 'Beta');
+  assert.match(euroRow.probabilityOutcome, /П1 51/);
+  assert.match(euroRow.totalGoals, /ТБ 2.5:/);
+  assert.match(euroRow.underGoals, /ТМ 2.5:/);
 
   console.log('Smoke tests passed: API response shape, provider field normalization, and missing-token diagnostics.');
 }
