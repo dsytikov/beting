@@ -197,8 +197,11 @@ async function fetchEuro365(targetDate) {
     if (result.status !== 'fulfilled') continue;
     for (const [id, event] of eventEntries(result.value)) eventMap.set(id, event);
   }
-  if (!eventMap.size && liveResult.status === 'rejected' && prematchResult.status === 'rejected') {
-    throw new Error('Euro365: live: ' + liveResult.reason.message + '; prematch: ' + prematchResult.reason.message);
+  if (!eventMap.size) {
+    const failures = [];
+    if (liveResult.status === 'rejected') failures.push('live: ' + liveResult.reason.message);
+    if (prematchResult.status === 'rejected') failures.push('prematch: ' + prematchResult.reason.message);
+    if (failures.length) throw new Error('Euro365: событий не получено; ' + failures.join('; '));
   }
   if (scoresResult.status === 'fulfilled') {
     const scores = obj(unwrapData(scoresResult.value));
