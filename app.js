@@ -23,8 +23,12 @@ function probabilityParts(value) {
   });
 }
 function maxProbability(item) {
+  const doubleChance = doubleChanceProbabilities(item.probabilityOutcome);
   const fields = [
     item.probabilityOutcome,
+    doubleChance.oneX,
+    doubleChance.twelve,
+    doubleChance.xTwo,
     item.totalGoals,
     item.underGoals,
     item.individualTotals,
@@ -111,7 +115,7 @@ function renderTable() {
     .filter((item) => item.maxProbability >= MIN_DISPLAY_PROBABILITY || item.source === 'Euro365')
     .filter((item) => activeSource === 'all' || item.source === activeSource);
   const rows = sortPredictions(qualified);
-  const sourceLabel = activeSource === 'BSD' ? 'BSD' : activeSource === 'SStats' ? 'S-Stats' : activeSource === 'Euro365' ? 'Euro365' : '';
+  const sourceLabel = activeSource === 'BSD' ? 'BSD' : activeSource === 'SStats' ? 'S-Stats' : activeSource === 'Euro365' ? 'Euro365' : activeSource === 'FB_DATA' ? 'FB_DATA' : '';
   $('empty-state').textContent = `Нет матчей${sourceLabel ? ` из источника ${sourceLabel}` : ''} для отображения.`;
   $('empty-state').classList.toggle('hidden', rows.length > 0);
   for (const item of rows) {
@@ -158,6 +162,7 @@ async function loadAll(requestRefresh = false) {
   $('status-bsd').textContent = 'BSD: загрузка…';
   $('status-sstats').textContent = 'SStats: загрузка…';
   $('status-euro365').textContent = 'Euro365: загрузка…';
+  $('status-fbdata').textContent = 'FB_DATA: загрузка…';
   try {
     if (requestRefresh) {
       const refreshResponse = await fetch('/api/data', { method: 'POST' });
@@ -171,6 +176,7 @@ async function loadAll(requestRefresh = false) {
     setSourceStatus('status-bsd', 'BSD', data.sources?.bsd);
     setSourceStatus('status-sstats', 'SStats', data.sources?.sstats);
     setSourceStatus('status-euro365', 'Euro365', data.sources?.euro365);
+    setSourceStatus('status-fbdata', 'FB_DATA', data.sources?.fbdata);
     const generatedAt = data.generatedAt ? new Date(data.generatedAt) : null;
     $('current-date').textContent = generatedAt && !Number.isNaN(generatedAt.getTime())
       ? `Матчи на ${data.date || 'сегодня'} · обновлено ${generatedAt.toLocaleString('ru-RU')}`
