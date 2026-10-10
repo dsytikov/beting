@@ -13,7 +13,7 @@ function text(value, fallback = '—') {
 function formatTime(value) {
   if (!value) return '—';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 function probabilityParts(value) {
   if (value === null || value === undefined || value === '') return [];
