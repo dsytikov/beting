@@ -187,9 +187,10 @@ async function fetchEuro365(targetDate) {
   lastAttemptAt = now;
   const key = process.env.EURO365_API_KEY || '';
   if (!key) throw new Error('Не задан EURO365_API_KEY в Environment Variables Vercel');
-  const [liveResult, prematchResult] = await Promise.allSettled([
+  const [liveResult, prematchResult, scoresResult] = await Promise.allSettled([
     requestJson('/v1/live?sport=1', 4000),
-    requestJson('/v1/prematch?sport=1', 4000)
+    requestJson('/v1/prematch?sport=1', 4000),
+    requestJson('/v1/scores', 3000)
   ]);
   const eventMap = new Map();
   for (const result of [liveResult, prematchResult]) {
@@ -198,6 +199,20 @@ async function fetchEuro365(targetDate) {
   }
   if (!eventMap.size && liveResult.status === 'rejected' && prematchResult.status === 'rejected') {
     throw new Error('Euro365: live: ' + liveResult.reason.message + '; prematch: ' + prematchResult.reason.message);
+  }
+  if (scoresResult.status === 'fulfilled') {
+    const scores = obj(unwrapData(scoresResult.value));
+    for (const [id, event] of eventMap) {
+      const score = scores[id];
+      if (!score || typeof score !== 'object') continue;
+      eventMap.set(id, {
+        ...event,
+        home_score: first(score.home, event.home_score),
+        away_score: first(score.away, event.away_score),
+        status: first(score.status, event.status),
+        kickoff: first(score.kickoff, event.kickoff)
+      });
+    }
   }
   const targetEvents = [...eventMap.entries()]
     .filter(([, event]) => dayKey(dateFromEvent(event)) === targetDate)
