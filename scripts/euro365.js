@@ -5,6 +5,7 @@ const CACHE_MS = 60_000;
 const DICTIONARY_TTL_MS = 60 * 60 * 1000;
 let cachedRows = [];
 let cachedAt = 0;
+let cachedDate = '';
 let lastAttemptAt = 0;
 let dictionaryCache = null;
 let dictionaryAt = 0;
@@ -146,7 +147,7 @@ function normalizeEuro365(eventId, event, oddsForEvent, dictionary, targetDate) 
   const result = marketProbabilities(oddsForEvent, dictionary, ['1001', ...idsFor(/1x2|match result|match winner/)], null, ['1', 'x', '2']);
   const totalOverUnder = marketProbabilities(oddsForEvent, dictionary, ['1018', '1007', ...idsFor(/total goals.*over.*under|goals over.*under/)], '2.5', ['over', 'under']);
   const cornerOverUnder = marketProbabilities(oddsForEvent, dictionary, idsFor(/total corners.*over.*under|corners over.*under/), '9.5', ['over', 'under']);
-  const status = String(first(event.status, event.state, '')).toLowerCase();
+  const status = String(first(event.status, event.state, event.live === true ? 'live' : '')).toLowerCase();
   const score = first(event.score, event.sc, null);
   const homeScore = first(event.home_score, event.homeScore, score && score.home, Array.isArray(score) ? score[0] : null);
   const awayScore = first(event.away_score, event.awayScore, score && score.away, Array.isArray(score) ? score[1] : null);
@@ -178,9 +179,9 @@ function normalizeEuro365(eventId, event, oddsForEvent, dictionary, targetDate) 
 }
 async function fetchEuro365(targetDate) {
   const now = Date.now();
-  if (cachedAt && now - cachedAt < CACHE_MS) return cachedRows;
+  if (cachedAt && cachedDate === targetDate && now - cachedAt < CACHE_MS) return cachedRows;
   if (lastAttemptAt && now - lastAttemptAt < CACHE_MS) {
-    if (cachedAt) return cachedRows;
+    if (cachedAt && cachedDate === targetDate) return cachedRows;
     throw new Error('Euro365: обновление ограничено до одного раза в минуту для соблюдения лимита API');
   }
   lastAttemptAt = now;
@@ -208,6 +209,7 @@ async function fetchEuro365(targetDate) {
     .slice(0, 100);
   if (!targetEvents.length) {
     cachedRows = [];
+    cachedDate = targetDate;
     cachedAt = Date.now();
     return cachedRows;
   }
@@ -217,6 +219,7 @@ async function fetchEuro365(targetDate) {
   const oddsData = obj(unwrapData(oddsPayload));
   const rows = targetEvents.map(([id, event]) => normalizeEuro365(id, event, oddsData[id], dictionary, targetDate)).filter(Boolean);
   cachedRows = rows;
+  cachedDate = targetDate;
   cachedAt = Date.now();
   return cachedRows;
 }
