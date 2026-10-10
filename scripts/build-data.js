@@ -4,11 +4,13 @@ const fs = require('node:fs');
 
 const BSD_BASE = 'https://sports.bzzoiro.com/api/v2';
 const SSTATS_BASE = 'https://api.sstats.net';
+const { fetchEuro365 } = require('./euro365');
 let date = new Date().toISOString().slice(0, 10);
 const errors = [];
 const sourceStatus = {
   bsd: { ok: false, count: 0, message: '', diagnostic: '' },
-  sstats: { ok: false, count: 0, message: '', diagnostic: '' }
+  sstats: { ok: false, count: 0, message: '', diagnostic: '' },
+  euro365: { ok: false, count: 0, message: '', diagnostic: '' }
 };
 
 function arr(payload, depth = 0) {
@@ -596,13 +598,13 @@ async function runSource(name, fn) {
       message: priorMessage || (rows.length ? '' : [`API ответил, но матчи за ${date} не найдены или формат ответа не распознан`, diagnostic].filter(Boolean).join(' — ')),
       diagnostic
     };
-    if (!rows.length) errors.push(`${name === 'bsd' ? 'BSD' : 'SStats'}: ${sourceStatus[name].message}`);
-    else if (priorMessage) errors.push(`${name === 'bsd' ? 'BSD' : 'SStats'}: ${priorMessage}`);
+    if (!rows.length) errors.push(`${name === 'bsd' ? 'BSD' : name === 'sstats' ? 'SStats' : 'Euro365'}: ${sourceStatus[name].message}`);
+    else if (priorMessage) errors.push(`${name === 'bsd' ? 'BSD' : name === 'sstats' ? 'SStats' : 'Euro365'}: ${priorMessage}`);
     return rows;
   } catch (error) {
     const message = safeError(error);
     sourceStatus[name] = { ok: false, count: 0, message };
-    errors.push(`${name === 'bsd' ? 'BSD' : 'SStats'}: ${message}`);
+    errors.push(`${name === 'bsd' ? 'BSD' : name === 'sstats' ? 'SStats' : 'Euro365'}: ${message}`);
     return [];
   }
 }
@@ -611,7 +613,12 @@ async function buildData() {
   errors.length = 0;
   sourceStatus.bsd = { ok: false, count: 0, message: '', diagnostic: '' };
   sourceStatus.sstats = { ok: false, count: 0, message: '', diagnostic: '' };
-  const [bsd, sstats] = await Promise.all([runSource('bsd', fetchBSD), runSource('sstats', fetchSStats)]);
+  sourceStatus.euro365 = { ok: false, count: 0, message: '', diagnostic: '' };
+  const [bsd, sstats, euro365] = await Promise.all([
+    runSource('bsd', fetchBSD),
+    runSource('sstats', fetchSStats),
+    runSource('euro365', () => fetchEuro365(date))
+  ]);
   const teamKey = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const bsdProbabilities = new Map();
   for (const row of bsd) {
@@ -623,7 +630,7 @@ async function buildData() {
     const bsdProbability = bsdProbabilities.get(`${teamKey(row.home)}|${teamKey(row.away)}`);
     if (bsdProbability) row.probabilityOutcome = bsdProbability;
   }
-  const predictions = [...bsd, ...sstats]
+  const predictions = [...bsd, ...sstats, ...euro365]
     .filter(row => row.time && dateKey(row.time) === date)
     .sort((a, b) => new Date(a.time) - new Date(b.time));
   return { date, generatedAt: new Date().toISOString(), sources: sourceStatus, errors, predictions };
@@ -633,7 +640,7 @@ if (require.main === module) {
   buildData().then(output => {
     fs.writeFileSync('data.json', JSON.stringify(output, null, 2) + '\n');
     console.log(`Generated data.json: ${output.predictions.length} rows; BSD=${output.sources.bsd.count}; SStats=${output.sources.sstats.count}`);
-    if (!output.sources.bsd.ok && !output.sources.sstats.ok) {
+    if (!output.sources.bsd.ok && !output.sources.sstats.ok && !output.sources.euro365.ok) {
       console.warn('Both data sources failed; generated JSON contains diagnostic errors.');
     }
   }).catch(error => { console.error(error); process.exitCode = 1; });
