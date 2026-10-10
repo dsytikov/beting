@@ -441,14 +441,18 @@ async function fetchSStats() {
   // Fetch league metadata concurrently to reduce total serverless execution time.
   const leaguesPromise = getJson(`${SSTATS_BASE}/leagues?${apiKey}`, {}, 1800).catch(() => null);
   const querySpecs = [
-    { label: 'From/To', method: 'GET', query: { From: date, To: date, Order: '-1' }, timeoutMs: 4500 },
+    // Try the documented date filters separately: API deployments can differ in how From/To are interpreted.
+    { label: 'From/To', method: 'GET', query: { From: date, To: date, Order: '-1', Limit: '300', Offset: '0' }, timeoutMs: 4500 },
+    { label: 'Date', method: 'GET', query: { Date: date, Order: '-1', Limit: '300', Offset: '0' }, timeoutMs: 4500 },
+    { label: 'Today', method: 'GET', query: { Today: 'true', Order: '-1', Limit: '300', Offset: '0' }, timeoutMs: 4500 },
     {
       label: 'Games/query date condition',
       method: 'POST',
       timeoutMs: 5500,
       body: {
         condition: `Date >= '${date}' AND Date < '${new Date(Date.parse(date + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10)}'`,
-        fields: ['Id', 'Date', 'HomeTeamName', 'AwayTeamName', 'LeagueId', 'Status', 'HomeScore', 'AwayScore'],
+        // HomeScore/AwayScore are not valid fields in the current SStats query schema; request only documented match fields.
+        fields: ['Id', 'Date', 'HomeTeamName', 'AwayTeamName', 'LeagueId', 'Status'],
         format: 'json',
         timezone: 0,
         order: 'Date',
