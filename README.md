@@ -10,6 +10,7 @@ A football predictions dashboard with a static browser UI and a server-side Node
 4. In **Project Settings → Environment Variables**, add:
    - `BSD_TOKEN` — token for Bzzoiro Sports Data.
    - `SSTATS_TOKEN` — token for SStats.
+   - `EURO365_API_KEY` — API key for Euro365 (used only server-side).
 5. Deploy and open the generated `vercel.app` URL.
 
 The Hobby plan is free within its limits. Do not upgrade to a paid plan. If Vercel asks for payment details, stop rather than entering them; we can choose another no-card option.
