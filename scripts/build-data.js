@@ -10,7 +10,8 @@ const errors = [];
 const sourceStatus = {
   bsd: { ok: false, count: 0, message: '', diagnostic: '' },
   sstats: { ok: false, count: 0, message: '', diagnostic: '' },
-  euro365: { ok: false, count: 0, message: '', diagnostic: '' }
+  euro365: { ok: false, count: 0, message: '', diagnostic: '' },
+  fbdata: { ok: false, count: 0, message: '', diagnostic: '' }
 };
 
 function arr(payload, depth = 0) {
@@ -349,6 +350,108 @@ function normalizeSstats(game, glicko = null, leagueNames = new Map()) {
     yellowCards: cardParts.length ? cardParts.join(' / ') : '—'
   };
 }
+
+function poissonDistribution(lambda, maxGoals = 10) {
+  const mean = Math.max(0, Math.min(8, Number(lambda) || 0));
+  const values = [Math.exp(-mean)];
+  for (let goals = 1; goals <= maxGoals; goals++) values.push(values[goals - 1] * mean / goals);
+  const sum = values.reduce((total, value) => total + value, 0);
+  return values.map(value => value / sum);
+}
+function normalizeFootballData(match, history = []) {
+  const competitionCode = first(pick(match.competition || {}, 'code'), pick(match, 'competitionCode'));
+  const homeTeam = match.homeTeam || {};
+  const awayTeam = match.awayTeam || {};
+  const homeId = first(pick(homeTeam, 'id'));
+  const awayId = first(pick(awayTeam, 'id'));
+  const usable = history.filter(item =>
+    item.status === 'FINISHED' &&
+    item.score?.fullTime?.home !== null && item.score?.fullTime?.home !== undefined &&
+    item.score?.fullTime?.away !== null && item.score?.fullTime?.away !== undefined &&
+    (!competitionCode || pick(item.competition || {}, 'code') === competitionCode)
+  );
+  const homePlayedHome = usable.filter(item => String(item.homeTeam?.id) === String(homeId));
+  const homePlayedAway = usable.filter(item => String(item.awayTeam?.id) === String(homeId));
+  const awayPlayedHome = usable.filter(item => String(item.homeTeam?.id) === String(awayId));
+  const awayPlayedAway = usable.filter(item => String(item.awayTeam?.id) === String(awayId));
+  const avg = (items, selector) => items.length
+    ? items.reduce((total, item) => total + Number(selector(item)), 0) / items.length
+    : null;
+  const homeAttack = avg(homePlayedHome, item => item.score.fullTime.home);
+  const homeDefense = avg(homePlayedHome, item => item.score.fullTime.away);
+  const awayAttack = avg(awayPlayedAway, item => item.score.fullTime.away);
+  const awayDefense = avg(awayPlayedAway, item => item.score.fullTime.home);
+  const fallbackHome = avg([...homePlayedHome, ...homePlayedAway], item =>
+    String(item.homeTeam?.id) === String(homeId) ? item.score.fullTime.home : item.score.fullTime.away);
+  const fallbackHomeConceded = avg([...homePlayedHome, ...homePlayedAway], item =>
+    String(item.homeTeam?.id) === String(homeId) ? item.score.fullTime.away : item.score.fullTime.home);
+  const fallbackAway = avg([...awayPlayedHome, ...awayPlayedAway], item =>
+    String(item.homeTeam?.id) === String(awayId) ? item.score.fullTime.home : item.score.fullTime.away);
+  const fallbackAwayConceded = avg([...awayPlayedHome, ...awayPlayedAway], item =>
+    String(item.homeTeam?.id) === String(awayId) ? item.score.fullTime.away : item.score.fullTime.home);
+  const lambdaHome = Math.max(0.15, Math.min(4.5, ((homeAttack ?? fallbackHome ?? 1.25) + (awayDefense ?? fallbackAwayConceded ?? 1.25)) / 2));
+  const lambdaAway = Math.max(0.15, Math.min(4.5, ((awayAttack ?? fallbackAway ?? 1.0) + (homeDefense ?? fallbackHomeConceded ?? 1.0)) / 2));
+  const homeDist = poissonDistribution(lambdaHome);
+  const awayDist = poissonDistribution(lambdaAway);
+  let pHome = 0, pDraw = 0, pAway = 0;
+  for (let h = 0; h < homeDist.length; h++) {
+    for (let a = 0; a < awayDist.length; a++) {
+      const probability = homeDist[h] * awayDist[a];
+      if (h > a) pHome += probability;
+      else if (h === a) pDraw += probability;
+      else pAway += probability;
+    }
+  }
+  const totalLambda = lambdaHome + lambdaAway;
+  const probabilityOutcome = `П1 ${percent(pHome)} / X ${percent(pDraw)} / П2 ${percent(pAway)}`;
+  const over15 = poissonOver(totalLambda, 1);
+  const over25 = poissonOver(totalLambda, 2);
+  const over35 = poissonOver(totalLambda, 3);
+  const underParts = [
+    `ТМ 1.5: ${percent(1 - over15)}`,
+    `ТМ 2.5: ${percent(1 - over25)}`,
+    `ТМ 3.5: ${percent(1 - over35)}`
+  ];
+  const scores = match.score?.fullTime || {};
+  const hasScore = scores.home !== null && scores.home !== undefined && scores.away !== null && scores.away !== undefined;
+  const status = String(match.status || '').toUpperCase();
+  const actualResult = hasScore
+    ? `${status === 'FINISHED' ? 'ФТ · ' : ''}${scores.home}:${scores.away} · ${Number(scores.home) > Number(scores.away) ? 'П1' : Number(scores.home) < Number(scores.away) ? 'П2' : 'X'} · голов: ${Number(scores.home) + Number(scores.away)}`
+    : status === 'IN_PLAY' || status === 'PAUSED' ? 'Матч идёт' : '—';
+  return {
+    source: 'FB_DATA',
+    eventId: first(pick(match, 'id')),
+    time: match.utcDate || null,
+    league: first(pick(match.competition || {}, 'name'), '—'),
+    home: first(pick(homeTeam, 'shortName', 'name'), '—'),
+    away: first(pick(awayTeam, 'shortName', 'name'), '—'),
+    actualResult,
+    outcome: [['П1', pHome], ['X', pDraw], ['П2', pAway]].sort((a, b) => b[1] - a[1])[0][0],
+    probabilityOutcome,
+    totalGoals: `ТБ 1.5: ${percent(over15)} / ТБ 2.5: ${percent(over25)} / ТБ 3.5: ${percent(over35)}`,
+    underGoals: underParts.join(' / '),
+    individualTotals: `Х ${lambdaHome.toFixed(2)} / Г ${lambdaAway.toFixed(2)} xG (модель)`,
+    corners: '—',
+    yellowCards: '—'
+  };
+}
+async function fetchFootballData() {
+  const token = process.env.FD_DATA_TOKEN || '';
+  if (!token) throw new Error('Не задан FD_DATA_TOKEN в Environment Variables Vercel');
+  const today = new Date().toISOString().slice(0, 10);
+  const historyFrom = new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10);
+  const headers = { 'X-Auth-Token': token, Accept: 'application/json' };
+  const [todayPayload, historyPayload] = await Promise.all([
+    getJson(`https://api.football-data.org/v4/matches?dateFrom=${today}&dateTo=${today}`, headers, 6000),
+    getJson(`https://api.football-data.org/v4/matches?dateFrom=${historyFrom}&dateTo=${today}&status=FINISHED&limit=500`, headers, 7000)
+  ]);
+  const matches = arr(todayPayload?.matches ? todayPayload : todayPayload);
+  const history = arr(historyPayload?.matches ? historyPayload : historyPayload);
+  const todayMatches = matches.filter(match => match.utcDate && dateKey(match.utcDate) === today);
+  sourceStatus.fbdata.diagnostic = `Football-data.org: расписание ${todayMatches.length}, исторических матчей получено ${history.length}; вероятности рассчитаны по Пуассону на основе результатов за 120 дней`;
+  return todayMatches.map(match => normalizeFootballData(match, history));
+}
+
 async function fetchBSD() {
   const token = process.env.BSD_TOKEN || '';
   if (!token) throw new Error('Не задан BSD_TOKEN в Environment Variables Vercel');
@@ -608,7 +711,7 @@ async function runSource(name, fn) {
       message: priorMessage || (rows.length ? '' : [`API ответил, но матчи за ${date} не найдены или формат ответа не распознан`, diagnostic].filter(Boolean).join(' — ')),
       diagnostic
     };
-    if (!rows.length) errors.push(`${name === 'bsd' ? 'BSD' : name === 'sstats' ? 'SStats' : 'Euro365'}: ${sourceStatus[name].message}`);
+    if (!rows.length) errors.push(`${name === 'bsd' ? 'BSD' : name === 'sstats' ? 'SStats' : name === 'fbdata' ? 'FB_DATA' : 'Euro365'}: ${sourceStatus[name].message}`);
     else if (priorMessage) errors.push(`${name === 'bsd' ? 'BSD' : name === 'sstats' ? 'SStats' : 'Euro365'}: ${priorMessage}`);
     return rows;
   } catch (error) {
@@ -624,10 +727,12 @@ async function buildData() {
   sourceStatus.bsd = { ok: false, count: 0, message: '', diagnostic: '' };
   sourceStatus.sstats = { ok: false, count: 0, message: '', diagnostic: '' };
   sourceStatus.euro365 = { ok: false, count: 0, message: '', diagnostic: '' };
-  const [bsd, sstats, euro365] = await Promise.all([
+  sourceStatus.fbdata = { ok: false, count: 0, message: '', diagnostic: '' };
+  const [bsd, sstats, euro365, fbdata] = await Promise.all([
     runSource('bsd', fetchBSD),
     runSource('sstats', fetchSStats),
-    runSource('euro365', () => fetchEuro365(moscowDateKey(new Date())))
+    runSource('euro365', () => fetchEuro365(moscowDateKey(new Date()))),
+    runSource('fbdata', fetchFootballData)
   ]);
   const teamKey = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const bsdProbabilities = new Map();
@@ -640,7 +745,7 @@ async function buildData() {
     const bsdProbability = bsdProbabilities.get(`${teamKey(row.home)}|${teamKey(row.away)}`);
     if (bsdProbability) row.probabilityOutcome = bsdProbability;
   }
-  const predictions = [...bsd, ...sstats, ...euro365]
+  const predictions = [...bsd, ...sstats, ...euro365, ...fbdata]
     .filter(row => row.time && (row.source === 'Euro365' ? moscowDateKey(row.time) === moscowDateKey(new Date()) : dateKey(row.time) === date))
     .sort((a, b) => new Date(a.time) - new Date(b.time));
   return { date, generatedAt: new Date().toISOString(), sources: sourceStatus, errors, predictions };
@@ -656,4 +761,4 @@ if (require.main === module) {
   }).catch(error => { console.error(error); process.exitCode = 1; });
 }
 
-module.exports = { buildData, normalizeBsd, normalizeSstats, arr, dateKey };
+module.exports = { buildData, normalizeBsd, normalizeSstats, normalizeFootballData, arr, dateKey };
